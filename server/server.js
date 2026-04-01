@@ -5,11 +5,14 @@ const liteApi = require("liteapi-node-sdk");
 const cors = require("cors");
 const path = require("path");
 require("dotenv").config();
+const morgan = require('morgan');
+
+app.use(morgan('dev'));   // This prints nice logs in the terminal when requests come in
 
 // Enhanced CORS configuration for payment processing
 const corsOptions = {
   origin: [
-    "http://localhost:3000",
+    "http://localhost:5000",
     "http://localhost:3001",
     "https://payment-wrapper.liteapi.travel",
     "https://merchant-ui-api.stripe.com",
@@ -317,76 +320,44 @@ app.post("/prebook", async (req, res) => {
   }
 });
 
-app.get("/book", (req, res) => {
-  console.log(req.query);
-  const { prebookId, guestFirstName, guestLastName, guestEmail, transactionId, environment } =
-    req.query;
+// Complete Booking Endpoint
+app.get('/book', async (req, res) => {
+  try {
+    const { prebookId, transactionId, holder } = req.query;
 
-  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
-  const sdk = liteApi(apiKey);
+    if (!prebookId || !transactionId) {
+      return res.status(400).json({ error: "Missing prebookId or transactionId" });
+    }
 
-	// Prepare the booking data
-  const bodyData = {
-    holder: {
-      firstName: guestFirstName,
-      lastName: guestLastName,
-      email: guestEmail,
-    },
-    payment: {
-      method: "TRANSACTION_ID",
-      transactionId: transactionId,
-    },
-    prebookId: prebookId,
-    guests: [
-      {
-        occupancyNumber: 1,
-        remarks: "",
-        firstName: guestFirstName,
-        lastName: guestLastName,
-        email: guestEmail,
-      },
-    ],
-  };
-
-  console.log(bodyData);
-
-  sdk
-    .book(bodyData)
-    .then((data) => {
-      if (!data || data.error) {
-        // Validate if there's any error in the data
-        throw new Error(
-          "Error in booking data: " + (data.error ? data.error.message : "Unknown error")
-        );
+    const bookData = {
+      prebookId,
+      transactionId,
+      holder: holder ? JSON.parse(holder) : {
+        title: "Mr",
+        firstName: "John",
+        lastName: "Doe",
+        phone: "+1234567890",
+        email: "john.doe@example.com"
       }
+    };
 
-      console.log(data);
+    const result = await liteApi.rates.book(bookData);
 
-      res.json({
-        success: true,
-        data: {
-          bookingId: data.data.bookingId,
-          hotelConfirmationNumber: data.data.hotelConfirmationNumber || null,
-          hotelName: data.data.hotel.name,
-          status: data.data.status,
-          checkin: data.data.checkin,
-          checkout: data.data.checkout,
-          roomType: data.data.bookedRooms[0].roomType.name,
-          totalAmount: data.data.bookedRooms[0].rate.retailRate.total.amount,
-          currency: data.data.bookedRooms[0].rate.retailRate.total.currency,
-          guestFirstName: data.data.bookedRooms[0].firstName,
-          guestLastName: data.data.bookedRooms[0].lastName,
-          guestEmail: data.data.bookedRooms[0].email,
-          cancelBy: data.data.cancellationPolicies?.cancelPolicyInfos?.[0]?.cancelTime || "Not specified",
-          cancelFee: data.data.cancellationPolicies?.cancelPolicyInfos?.[0]?.amount || "Not specified",
-          remarks: data.data.remarks || "No additional remarks."
-        }
-      });
-    })
-    .catch((err) => {
-      console.error("Error during booking:", err);
-      res.status(500).send(`Failed to book: ${err.message}`);
+    // Optional: Send confirmation email here later
+
+    res.json({
+      success: true,
+      booking: result,
+      message: "Booking completed successfully!"
     });
+
+  } catch (error) {
+    console.error('Booking error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Booking failed"
+    });
+  }
 });
 
 // Serve the client-side application
@@ -396,7 +367,7 @@ app.get("/", (req, res) => {
 
 app.use(express.static(path.join(__dirname, "../client")));
 
-const port = 3000;
+const port = process.env.PORT || 5000;
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
