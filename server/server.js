@@ -436,14 +436,26 @@ async function handleBook(req, res) {
 
   try {
     const hasRatesBook = typeof sdk?.rates?.book === "function";
-    const result = hasRatesBook
-      ? await sdk.rates.book({ prebookId, transactionId, holder })
-      : await sdk.book({
-          prebookId,
-          transactionId,
-          holder,
-          payment: { method: "TRANSACTION_ID", transactionId },
-        });
+    // LiteAPI booking flow (Payment SDK):
+    // Use payment.method = TRANSACTION_ID and payment.transactionId from the PREBOOK step (tr_ct_...).
+    const payload = {
+      prebookId,
+      holder,
+      payment: {
+        method: "TRANSACTION_ID",
+        transactionId
+      },
+      guests: [
+        {
+          occupancyNumber: 1,
+          firstName: holder.firstName,
+          lastName: holder.lastName,
+          email: holder.email,
+        },
+      ],
+    };
+
+    const result = hasRatesBook ? await sdk.rates.book(payload) : await sdk.book(payload);
 
     const fail = liteApiFailure(result);
     if (fail) {

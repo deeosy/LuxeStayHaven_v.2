@@ -49,18 +49,35 @@ const destinations = [
 ];
 
 function FeaturedDestinations() {
-  const { setDestination } = useSearchStore();
+  const { checkin, checkout, adults, setDestination, setDates, setAdults } =
+    useSearchStore();
   const navigate = useNavigate();
 
   const handleClick = (dest) => {
+    const today = new Date();
+    const defaultCheckin = today.toISOString().slice(0, 10);
+    const defaultCheckout = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    const nextCheckin = checkin || defaultCheckin;
+    const nextCheckout = checkout || defaultCheckout;
+    const nextAdults = adults || 2;
+
     setDestination({
       placeId: null,
       destinationName: `${dest.city}, ${dest.countryCode}`
     });
+    setDates({ checkin: nextCheckin, checkout: nextCheckout });
+    setAdults(nextAdults);
     navigate(
       `/search?city=${encodeURIComponent(
         dest.city
-      )}&countryCode=${dest.countryCode}`
+      )}&countryCode=${dest.countryCode}&checkin=${encodeURIComponent(
+        nextCheckin
+      )}&checkout=${encodeURIComponent(nextCheckout)}&adults=${encodeURIComponent(
+        String(nextAdults)
+      )}`
     );
   };
 
@@ -140,4 +157,3 @@ function FeaturedDestinations() {
 }
 
 export default FeaturedDestinations;
-

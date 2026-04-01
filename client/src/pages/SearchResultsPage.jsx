@@ -27,7 +27,7 @@ function SearchResultsPage() {
 
   useEffect(() => {
     const city = query.get("city");
-    const countryCode = query.get("countryCode") || "US";
+    const countryCode = query.get("countryCode") || "";
     const checkin = query.get("checkin") || "";
     const checkout = query.get("checkout") || "";
     const adults = Number(query.get("adults") || 2);
@@ -46,7 +46,7 @@ function SearchResultsPage() {
       checkout,
       adults,
       city,
-      countryCode: countryCode.toUpperCase() || "FR",
+      countryCode: countryCode.toUpperCase(),
       environment
     })
       .then((data) => {
@@ -90,4 +90,3 @@ function SearchResultsPage() {
 }
 
 export default SearchResultsPage;
-

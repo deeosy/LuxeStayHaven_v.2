@@ -1,58 +1,83 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import useSearchStore from "../stores/useSearchStore.js";
 import Button from "../components/ui/Button.jsx";
 import { finalizeBooking } from "../utils/api.js";
+import { formatCurrency, formatDate } from "../utils/formatters.js";
 
 function normalizeTransactionId(searchParams) {
   return (
     searchParams.get("transactionId") ||
     searchParams.get("transactionID") ||
     searchParams.get("transaction_id") ||
+    searchParams.get("payment_intent") || 
     ""
   );
 }
 
 function pickBookingDetails(payload) {
-  const booking = payload?.booking || payload?.data || payload;
+  const bookingWrapper = payload?.booking || payload?.data || payload;
+  const bookingData = bookingWrapper?.data || bookingWrapper;
 
   const bookingId =
-    booking?.bookingId ||
-    booking?.bookingID ||
-    booking?.reference ||
-    booking?.id ||
+    bookingData?.bookingId ||
+    bookingData?.bookingID ||
+    bookingData?.reference ||
+    bookingData?.id ||
     payload?.bookingId ||
     "";
 
   const hotelName =
-    booking?.hotel?.name ||
-    booking?.hotelName ||
-    booking?.hotel?.hotelName ||
+    bookingData?.hotel?.name ||
+    bookingData?.hotelName ||
+    bookingData?.hotel?.hotelName ||
     "";
 
-  const checkin = booking?.checkin || booking?.dates?.checkin || "";
-  const checkout = booking?.checkout || booking?.dates?.checkout || "";
+  const checkin = bookingData?.checkin || bookingData?.dates?.checkin || "";
+  const checkout = bookingData?.checkout || bookingData?.dates?.checkout || "";
 
   const roomType =
-    booking?.bookedRooms?.[0]?.roomType?.name || booking?.roomType || "";
+    bookingData?.bookedRooms?.[0]?.roomType?.name || bookingData?.roomType || "";
 
   const amount =
-    booking?.bookedRooms?.[0]?.rate?.retailRate?.total?.amount ||
-    booking?.totalAmount ||
-    booking?.price?.gross ||
-    booking?.price?.amount ||
+    bookingData?.bookedRooms?.[0]?.rate?.retailRate?.total?.amount ||
+    bookingData?.bookedRooms?.[0]?.rate?.retailRate?.total?.[0]?.amount ||
+    bookingData?.totalAmount ||
+    bookingData?.price?.gross ||
+    bookingData?.price?.amount ||
     null;
 
   const currency =
-    booking?.bookedRooms?.[0]?.rate?.retailRate?.total?.currency ||
-    booking?.price?.currency ||
-    booking?.currency ||
+    bookingData?.bookedRooms?.[0]?.rate?.retailRate?.total?.currency ||
+    bookingData?.bookedRooms?.[0]?.rate?.retailRate?.total?.[0]?.currency ||
+    bookingData?.price?.currency ||
+    bookingData?.currency ||
     "";
 
   const guestName =
-    booking?.holder?.firstName || booking?.holder?.lastName
-      ? `${booking?.holder?.firstName || ""} ${booking?.holder?.lastName || ""}`.trim()
+    bookingData?.holder?.firstName || bookingData?.holder?.lastName
+      ? `${bookingData?.holder?.firstName || ""} ${
+          bookingData?.holder?.lastName || ""
+        }`.trim()
       : "";
+
+  const hotelConfirmationNumber =
+    bookingData?.hotelConfirmationNumber ||
+    bookingData?.supplierBookingName ||
+    "";
+
+  const guestsSummary = (() => {
+    const room = bookingData?.bookedRooms?.[0];
+    const adults = room?.adults;
+    const children = room?.children;
+    if (typeof adults === "number" && typeof children === "number") {
+      return `${adults} adult${adults === 1 ? "" : "s"}, ${children} child${
+        children === 1 ? "" : "ren"
+      }`;
+    }
+    if (typeof adults === "number") return `${adults} adult${adults === 1 ? "" : "s"}`;
+    return "";
+  })();
 
   return {
     bookingId,
@@ -62,7 +87,11 @@ function pickBookingDetails(payload) {
     roomType,
     amount,
     currency,
-    guestName
+    guestName,
+    guestsSummary,
+    hotelConfirmationNumber,
+    bookingData,
+    bookingWrapper
   };
 }
 
@@ -73,21 +102,86 @@ function Confirmation() {
 
   const prebookId = searchParams.get("prebookId") || "";
   const transactionId =
-    searchParams.get("transactionId") || normalizeTransactionId(searchParams);
+    searchParams.get("transactionId") || searchParams.get("payment_intent") || normalizeTransactionId(searchParams);
   const environment =
     searchParams.get("environment") || defaultEnvironment || "sandbox";
+
+  console.log("Confirmation page loaded with params:", {
+    prebookId,
+    transactionId: normalizeTransactionId(searchParams),
+    fullUrl: window.location.href
+  });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [bookingPayload, setBookingPayload] = useState(null);
+  const finalizeInFlight = useRef(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   const details = useMemo(
     () => pickBookingDetails(bookingPayload),
     [bookingPayload]
   );
 
+  const handleDownloadConfirmation = useCallback(() => {
+    const title = "LuxeStayHaven Booking Confirmation";
+    const safeBookingId = (details.bookingId || prebookId || "confirmation")
+      .replace(/[^a-z0-9-_]/gi, "_")
+      .slice(0, 48);
+
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${title}</title>
+  <style>
+    body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; margin:32px; color:#0f172a;}
+    h1{margin:0 0 12px; font-size:22px;}
+    .muted{color:#475569; font-size:12px;}
+    .card{border:1px solid #e2e8f0; border-radius:16px; padding:16px; margin-top:16px;}
+    .grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;}
+    .label{font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:#64748b;}
+    .value{font-size:14px; font-weight:600;}
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <div class="muted">Generated by LuxeStayHaven</div>
+  <div class="card">
+    <div class="grid">
+      <div><div class="label">Booking Reference</div><div class="value">${details.bookingId || "—"}</div></div>
+      <div><div class="label">Hotel Confirmation</div><div class="value">${details.hotelConfirmationNumber || "—"}</div></div>
+      <div><div class="label">Hotel</div><div class="value">${details.hotelName || "—"}</div></div>
+      <div><div class="label">Room</div><div class="value">${details.roomType || "—"}</div></div>
+      <div><div class="label">Check-in</div><div class="value">${details.checkin || "—"}</div></div>
+      <div><div class="label">Check-out</div><div class="value">${details.checkout || "—"}</div></div>
+      <div><div class="label">Guests</div><div class="value">${details.guestsSummary || details.guestName || "—"}</div></div>
+      <div><div class="label">Total Paid</div><div class="value">${
+        details.amount != null && details.currency
+          ? `${details.amount} ${details.currency}`
+          : "—"
+      }</div></div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `LuxeStayHaven-${safeBookingId}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [details, prebookId]);
+
   const runFinalize = useCallback(async () => {
     if (!prebookId || !transactionId) return;
+    if (finalizeInFlight.current) return;
+    finalizeInFlight.current = true;
 
     setLoading(true);
     setError(null);
@@ -100,6 +194,7 @@ function Confirmation() {
       setError(err.message || "Failed to confirm booking");
     } finally {
       setLoading(false);
+      finalizeInFlight.current = false;
     }
   }, [prebookId, transactionId, environment]);
 
@@ -135,6 +230,14 @@ function Confirmation() {
               This page is shown after payment. Please return to the home page and
               make a new booking.
             </p>
+            {!transactionId && prebookId && (
+              <div className="mb-6 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-left text-xs text-warning">
+                <div className="font-semibold">Debug</div>
+                <div className="mt-1 break-all">
+                  transactionId is missing from the URL. Current URL: {window.location.href}
+                </div>
+              </div>
+            )}
             <Button type="button" onClick={() => navigate("/")}>
               Go home
             </Button>
@@ -218,6 +321,12 @@ function Confirmation() {
                     </div>
                   </div>
                   <div>
+                    <div className="text-textLight">Hotel confirmation</div>
+                    <div className="font-medium text-textDark break-all">
+                      {details.hotelConfirmationNumber || "—"}
+                    </div>
+                  </div>
+                  <div>
                     <div className="text-textLight">Hotel</div>
                     <div className="font-medium text-textDark">
                       {details.hotelName || "—"}
@@ -232,21 +341,29 @@ function Confirmation() {
                   <div>
                     <div className="text-textLight">Check-in</div>
                     <div className="font-medium text-textDark">
-                      {details.checkin || "—"}
+                      {details.checkin ? formatDate(details.checkin) : "—"}
                     </div>
                   </div>
                   <div>
                     <div className="text-textLight">Check-out</div>
                     <div className="font-medium text-textDark">
-                      {details.checkout || "—"}
+                      {details.checkout ? formatDate(details.checkout) : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-textLight">Guests</div>
+                    <div className="font-medium text-textDark">
+                      {details.guestsSummary || details.guestName || "—"}
                     </div>
                   </div>
                   <div>
                     <div className="text-textLight">Total paid</div>
                     <div className="font-semibold text-primary">
-                      {details.amount != null && details.currency
-                        ? `${details.amount} ${details.currency}`
-                        : "—"}
+                      {details.amount != null && details.currency ? (
+                        formatCurrency(details.amount, details.currency)
+                      ) : (
+                        "—"
+                      )}
                     </div>
                   </div>
                 </div>
@@ -256,7 +373,7 @@ function Confirmation() {
                     type="button"
                     variant="secondary"
                     className="w-full sm:w-auto"
-                    disabled
+                    onClick={handleDownloadConfirmation}
                   >
                     Download confirmation
                   </Button>
@@ -264,11 +381,22 @@ function Confirmation() {
                     type="button"
                     variant="secondary"
                     className="w-full sm:w-auto"
-                    disabled
+                    onClick={() => setShowDetails((v) => !v)}
                   >
                     View booking details
                   </Button>
                 </div>
+
+                {showDetails && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-textLight font-semibold mb-2">
+                      Booking payload
+                    </div>
+                    <pre className="text-[11px] text-textMedium overflow-auto max-h-[420px] whitespace-pre-wrap break-words">
+                      {JSON.stringify(details.bookingWrapper, null, 2)}
+                    </pre>
+                  </div>
+                )}
 
                 <div className="text-[11px] text-textLight">
                   Environment: {environment}. A confirmation email will be sent to

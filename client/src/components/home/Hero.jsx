@@ -3,32 +3,32 @@ import { motion } from "framer-motion";
 import SearchBar from "./SearchBar.jsx";
 
 const heroImage =
-  "https://images.unsplash.com/photo-1542317854-0d6d3a6c2c42?auto=format&fit=crop&w=1600&q=80";
+  "https://static.wixstatic.com/media/5b8aec_6dee2fdfabdf49608414ad1611519d02~mv2.jpg/v1/fill/w_1110,h_624,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/5b8aec_6dee2fdfabdf49608414ad1611519d02~mv2.jpg";
 
 function Hero() {
   return (
-    <section className="relative min-h-[70vh] overflow-hidden">
+    <section className="relative min-h-[82vh] overflow-hidden">
       <img
         src={heroImage}
         alt="Luxury resort overlooking the ocean"
         className="absolute inset-0 h-full w-full object-cover"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-black/40 to-black/60" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/15 to-black/25" />
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-24 flex flex-col gap-10">
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-24 flex flex-col gap-10 md:gap-48 ">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="max-w-2xl text-white"
+          className="max-w-2xl mx-auto text-white"
         >
-          <p className="uppercase tracking-[0.35em] text-xs text-accent mb-3">
-            LUXURY HOTEL COLLECTION
+          <p className="uppercase tracking-[0.35em] text-center text-xs text-white mb-1">
+            ◆ LUXURY HOTEL COLLECTION
           </p>
-          <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl leading-tight mb-4">
+          <h1 className="font-heading text-center text-4xl text-accent sm:text-5xl lg:text-7xl leading-tight">
             LuxeStayHaven
           </h1>
-          <p className="text-base sm:text-lg text-slate-100/90 max-w-xl">
+          <p className="text-base sm:text-lg text-center text-slate-100/90 max-w-2xl">
             Discover extraordinary stays around the world. Handpicked five-star
             hotels, bespoke experiences, and seamless booking in a single
             elegant journey.

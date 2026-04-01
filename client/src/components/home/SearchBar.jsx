@@ -62,7 +62,7 @@ function SearchBar() {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ delay: 0.2, duration: 0.45, ease: "easeOut" }}
       onSubmit={handleSearch}
-      className="w-full max-w-4xl rounded-2xl bg-white/95 backdrop-blur shadow-soft p-4 sm:p-5 space-y-3"
+      className="w-full max-w-4xl mx-auto  rounded-2xl bg-white/30 backdrop-blur shadow-soft p-4 sm:p-5 space-y-3"
     >
       <div className="flex gap-4 text-xs font-medium text-textMedium">
         <button

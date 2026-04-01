@@ -131,13 +131,19 @@ function HotelDetailsPage() {
       try {
         setPaymentError(null);
 
-        const { prebookId } = extractPrebookData(prebookResponse);
+        const { prebookId, transactionId } = extractPrebookData(prebookResponse);
 
-        // FIXED: returnUrl for LiteAPI redirect (no hardcoded port; LiteAPI appends transactionId)
+        // FIXED: Clean returnUrl so LiteAPI can redirect back reliably.
+        // IMPORTANT (LiteAPI 2026 docs): you must keep the transactionId from the PREBOOK step (tr_ct_...).
+        // We include it in the returnUrl so Confirmation can always finalize the booking.
         const returnUrl = `${window.location.origin}/confirmation?prebookId=${encodeURIComponent(
           prebookId
-        )}`;
-        console.log("Payment init with returnUrl:", returnUrl);
+        )}&transactionId=${encodeURIComponent(transactionId)}`;
+        // DEBUG: Check browser console for returnUrl and final URL after redirect
+        console.log("=== Payment SDK Init ===");
+        console.log("returnUrl sent to LiteAPI:", returnUrl);
+        console.log("prebookId:", prebookId);
+
 
         // Step 3: Load official LiteAPI Payment SDK and render secure card form.
         // Important: Do NOT pass amount manually when usePaymentSdk=true.
