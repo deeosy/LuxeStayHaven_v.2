@@ -286,8 +286,8 @@ app.get("/search-rates", async (req, res) => {
 });
 
 app.post("/prebook", async (req, res) => {
-  // Required fields (POST JSON body): offerId, checkin, checkout, adults
-  // Optional: hotelId, children
+  // Required fields: offerId, checkin, checkout, adults
+  // Optional fields: hotelId, children (defaults to 0)
   const {
     offerId: offerIdRaw,
     checkin,
@@ -308,7 +308,6 @@ app.post("/prebook", async (req, res) => {
     });
   }
 
-  // Step 2: Choose environment + api key (sandbox/production)
   const resolvedEnvironment =
     environment ||
     process.env.LITEAPI_ENVIRONMENT ||
@@ -320,7 +319,9 @@ app.post("/prebook", async (req, res) => {
   if (!apiKey || String(apiKey).trim() === "") {
     const keyName =
       resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
-    return res.status(401).json({ error: `Missing ${keyName} in .env` });
+    return res.status(401).json({
+      error: `Missing ${keyName} in .env. Copy your key from https://dashboard.liteapi.travel/`
+    });
   }
 
   console.log("Prebook called with offerId:", offerId);
@@ -337,7 +338,6 @@ app.post("/prebook", async (req, res) => {
   const sdk = liteApi(apiKey);
 
   try {
-    // Do NOT pass margin here (we use the LiteAPI dashboard default)
     const prebookResponse = await sdk.preBook({
       offerId,
       usePaymentSdk: true
@@ -357,8 +357,8 @@ app.post("/prebook", async (req, res) => {
 });
 
 async function handleBook(req, res) {
-  // Step 1: Accept input from query (GET) or body (POST)
-  const source = req.method === "POST" ? req.body : req.query;
+  // Step 1: Accept input from POST body and query params (query as fallback)
+  const source = { ...(req.body || {}), ...(req.query || {}) };
 
   const {
     prebookId,
@@ -368,7 +368,7 @@ async function handleBook(req, res) {
     guestFirstName,
     guestLastName,
     guestEmail,
-  } = source || {};
+  } = source;
 
   // Step 2: Validate required fields
   const missing = [];
@@ -421,6 +421,12 @@ async function handleBook(req, res) {
   }
 
   // Step 5: Call LiteAPI booking endpoint
+  console.log(
+    "Final /book called with prebookId:",
+    prebookId,
+    "transactionId:",
+    transactionId
+  );
   console.log("book request:", {
     prebookId,
     transactionId,
@@ -445,17 +451,16 @@ async function handleBook(req, res) {
       return sendLiteApiError(res, fail);
     }
 
-    const bookingData = result?.data || result;
     console.log("book success:", {
       status: result?.status,
-      bookingId: bookingData?.bookingId,
+      bookingId: result?.data?.bookingId,
     });
 
-    // Step 6: Return booking reference
+    // Step 6: Return full booking object
     return res.json({
       success: true,
-      bookingId: bookingData?.bookingId,
-      booking: bookingData,
+      booking: result,
+      message: "Booking confirmed"
     });
   } catch (error) {
     console.error("book exception:", error?.response?.data || error);

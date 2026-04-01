@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
-import { prebook, searchRates } from "../utils/api.js";
+import {
+  extractPrebookData,
+  initializeLitePayment,
+  prebook,
+  searchRates
+} from "../utils/api.js";
 import useSearchStore from "../stores/useSearchStore.js";
 import ImageGallery from "../components/hotel/ImageGallery.jsx";
 import HotelInfo from "../components/hotel/HotelInfo.jsx";
@@ -12,26 +17,6 @@ function useQuery() {
   return React.useMemo(() => new URLSearchParams(search), [search]);
 }
 
-function loadLitePaymentSdk() {
-  if (typeof window !== "undefined" && window.LiteAPIPayment) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(
-      'script[data-liteapi-payment="true"]'
-    );
-    if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Failed to load payment SDK")));
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1";
-    script.async = true;
-    script.setAttribute("data-liteapi-payment", "true");
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load payment SDK"));
-    document.head.appendChild(script);
-  });
-}
 
 function HotelDetailsPage() {
   const { hotelId } = useParams();
@@ -44,10 +29,10 @@ function HotelDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeOffer, setActiveOffer] = useState(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [prebooking, setPrebooking] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
-  const [paymentReady, setPaymentReady] = useState(false);
-  const [prebookMeta, setPrebookMeta] = useState(null);
+  const [prebookResponse, setPrebookResponse] = useState(null);
+  const [paymentStarted, setPaymentStarted] = useState(false);
 
   useEffect(() => {
     const checkin = query.get("checkin") || "";
@@ -94,8 +79,8 @@ function HotelDetailsPage() {
   const handleBookNow = async (offer) => {
     setActiveOffer(offer);
     setPaymentError(null);
-    setPaymentReady(false);
-    setPrebookMeta(null);
+    setPrebookResponse(null);
+    setPaymentStarted(false);
 
     const offerId = offer?.offerId;
     if (!offerId) {
@@ -104,15 +89,16 @@ function HotelDetailsPage() {
     }
 
     if (!resolvedCheckin || !resolvedCheckout) {
-      setPaymentError("Missing check-in/check-out dates. Please go back and search again.");
+      setPaymentError(
+        "Missing check-in/check-out dates. Please go back and search again."
+      );
       return;
     }
 
     try {
-      setPaymentLoading(true);
-      setPaymentError(null);
-
-      const prebookResponse = await prebook({
+      // Step 1: Prebook (locks availability and returns secretKey when usePaymentSdk=true)
+      setPrebooking(true);
+      const resp = await prebook({
         offerId,
         checkin: resolvedCheckin,
         checkout: resolvedCheckout,
@@ -121,69 +107,65 @@ function HotelDetailsPage() {
         environment
       });
 
-      // Safer parsing of prebook response
-      const prebookData = prebookResponse?.success?.data || 
-                          prebookResponse?.data || 
-                          prebookResponse;
-
-      const secretKey = prebookData?.secretKey;
-      const prebookId = prebookData?.prebookId;
-      const transactionId = prebookData?.transactionId;
-      const currency = prebookData?.currency || "USD";
-      const amount = prebookData?.price?.amount || prebookData?.totalAmount || 0;
-
-      if (!secretKey || !prebookId || !transactionId) {
-        throw new Error("Prebook did not return required payment details. Please try again.");
+      const { prebookId, secretKey } = extractPrebookData(resp);
+      if (!prebookId || !secretKey) {
+        throw new Error(
+          "Prebook succeeded but did not include required payment fields (prebookId/secretKey)."
+        );
       }
 
-      setPrebookMeta({ prebookId, transactionId });
-
-      // Load the SDK script
-      await loadLitePaymentSdk();
-
-      const isSandbox = environment === "sandbox" || !environment;
-      const returnUrl = `${window.location.origin}/confirmation?prebookId=${encodeURIComponent(prebookId)}&transactionId=${encodeURIComponent(transactionId)}&environment=${encodeURIComponent(environment || "sandbox")}`;
-
-      const config = {
-        publicKey: isSandbox ? "sandbox" : "live",
-        secretKey: secretKey,
-        targetElement: "#payment-container",
-        returnUrl: returnUrl,
-        amount: amount,
-        currency: currency,
-        options: {
-          business: { 
-            name: "LuxeStayHaven" 
-          },
-          theme: "flat"   // or "dark" if you prefer
-        }
-      };
-
-      console.log("Payment SDK config:", config);
-
-      // Clear previous payment form
-      const container = document.getElementById("payment-container");
-      if (container) container.innerHTML = "";
-
-      // Initialize the payment form (this renders the form + pay button)
-      const paymentInstance = new window.LiteAPIPayment(config);
-      
-      // Do NOT call .handlePayment() or .on() — the SDK renders automatically
-      setPaymentReady(true);
-
-      // Optional: scroll to the payment section
-      setTimeout(() => {
-        const el = document.getElementById("secure-checkout");
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 100);
-
+      setPrebookResponse(resp);
     } catch (err) {
-      console.error("Booking/Payment init error:", err);
-      setPaymentError(err.message || "Failed to initialize secure payment. Please try again.");
+      setPaymentError(err.message || "Failed to prebook. Please try again.");
     } finally {
-      setPaymentLoading(false);
+      setPrebooking(false);
     }
   };
+
+  useEffect(() => {
+    if (!prebookResponse) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setPaymentError(null);
+
+        const { prebookId } = extractPrebookData(prebookResponse);
+
+        // FIXED: returnUrl for LiteAPI redirect (no hardcoded port; LiteAPI appends transactionId)
+        const returnUrl = `${window.location.origin}/confirmation?prebookId=${encodeURIComponent(
+          prebookId
+        )}`;
+        console.log("Payment init with returnUrl:", returnUrl);
+
+        // Step 3: Load official LiteAPI Payment SDK and render secure card form.
+        // Important: Do NOT pass amount manually when usePaymentSdk=true.
+        await initializeLitePayment({
+          prebookResponse,
+          returnUrl,
+          targetElement: "#payment-container",
+          environment: environment || "sandbox"
+        });
+
+        if (!cancelled) {
+          setPaymentStarted(true);
+          setTimeout(() => {
+            const el = document.getElementById("secure-checkout");
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 50);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPaymentError(err.message || "Failed to initialize payment.");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prebookResponse, environment]);
 
   return (
     <section className="bg-background py-8 sm:py-10">
@@ -201,7 +183,13 @@ function HotelDetailsPage() {
             <div className="space-y-6">
               <ImageGallery hotelInfo={hotelInfo} />
               <HotelInfo hotelInfo={hotelInfo} />
-              <RoomList rateInfo={rateInfo} onSelectOffer={handleBookNow} />
+              {!prebookResponse ? (
+                <RoomList rateInfo={rateInfo} onSelectOffer={handleBookNow} />
+              ) : (
+                <div className="rounded-2xl bg-white border border-slate-100 shadow-soft p-4 sm:p-5 text-sm text-textMedium">
+                  Secure payment is ready in the panel on the right.
+                </div>
+              )}
             </div>
             <div className="lg:sticky lg:top-20 h-fit">
               <aside
@@ -238,6 +226,12 @@ function HotelDetailsPage() {
                   </div>
                 )}
 
+                {environment === "sandbox" && (
+                  <div className="rounded-xl bg-warning/5 border border-warning/20 px-3 py-2 text-xs text-warning">
+                    Sandbox mode: use test card 4242 4242 4242 4242, any future expiry, any 3-digit CVV.
+                  </div>
+                )}
+
                 {paymentError && (
                   <div className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
                     {paymentError}
@@ -245,21 +239,31 @@ function HotelDetailsPage() {
                 )}
 
                 <div className="space-y-2">
-                  {paymentLoading && (
+                  {prebooking && (
                     <div className="text-xs text-textMedium flex items-center gap-2">
                       <span className="h-3.5 w-3.5 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-                      Loading secure payment…
+                      Preparing secure checkout…
                     </div>
                   )}
-                  {prebookMeta && (
+
+                  {prebookResponse && (
                     <div className="text-[11px] text-textLight">
-                      Ref: {prebookMeta.prebookId}
+                      Ref: {extractPrebookData(prebookResponse).prebookId}
                     </div>
                   )}
-                  <div
-                    id="payment-container"
-                    className={`w-full ${paymentReady ? "" : "min-h-[140px]"}`}
-                  />
+
+                  {prebookResponse && (
+                    <div
+                      id="payment-container"
+                      className="mt-2 border border-slate-100 rounded-xl p-4 bg-white"
+                    />
+                  )}
+
+                  {paymentStarted && (
+                    <div className="text-[11px] text-textLight">
+                      Securely complete your booking in the payment form above.
+                    </div>
+                  )}
                 </div>
               </aside>
             </div>
