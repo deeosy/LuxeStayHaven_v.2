@@ -70,11 +70,26 @@ export async function searchRates({
   return handleResponse(res);
 }
 
-export async function prebook({ rateId, environment, voucherCode }) {
+export async function prebook(data) {
+  const payload = {
+    offerId: data?.offerId,
+    checkin: data?.checkin,
+    checkout: data?.checkout,
+    adults: data?.adults,
+    hotelId: data?.hotelId,
+    children: data?.children,
+    environment: data?.environment
+  };
+
+  // Backward compatibility: some callers still send { rateId }
+  if (!payload.offerId && data?.rateId) {
+    payload.offerId = data.rateId;
+  }
+
   const res = await fetch(`${BASE}/prebook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rateId, environment, voucherCode })
+    body: JSON.stringify(payload)
   });
   return handleResponse(res);
 }

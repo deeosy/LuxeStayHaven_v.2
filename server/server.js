@@ -286,26 +286,25 @@ app.get("/search-rates", async (req, res) => {
 });
 
 app.post("/prebook", async (req, res) => {
-  // Step 1: Validate input
+  // Required fields (POST JSON body): offerId, checkin, checkout, adults
+  // Optional: hotelId, children
   const {
     offerId: offerIdRaw,
     checkin,
     checkout,
     adults,
     hotelId,
-    environment,
+    children = 0,
+    environment
   } = req.body || {};
 
   const offerId = offerIdRaw != null ? String(offerIdRaw).trim() : "";
+  const adultsNum = adults != null ? Number(adults) : NaN;
+  const childrenNum = children != null ? Number(children) : 0;
 
-  const missing = [];
-  if (!offerId) missing.push("offerId");
-  if (!checkin) missing.push("checkin");
-  if (!checkout) missing.push("checkout");
-  if (adults == null || String(adults).trim() === "") missing.push("adults");
-  if (missing.length > 0) {
+  if (!offerId || !checkin || !checkout || !adultsNum) {
     return res.status(400).json({
-      error: `Missing required field(s): ${missing.join(", ")}`,
+      error: "Missing required field(s): offerId, checkin, checkout, adults"
     });
   }
 
@@ -314,52 +313,43 @@ app.post("/prebook", async (req, res) => {
     environment ||
     process.env.LITEAPI_ENVIRONMENT ||
     (process.env.NODE_ENV === "production" ? "production" : "sandbox");
+
   const apiKey =
     resolvedEnvironment === "sandbox" ? sandbox_apiKey : prod_apiKey;
 
   if (!apiKey || String(apiKey).trim() === "") {
-    const keyName = resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
+    const keyName =
+      resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
     return res.status(401).json({ error: `Missing ${keyName} in .env` });
   }
 
-  // Step 3: Call LiteAPI preBook to lock the offer and enable Payment SDK
-  // Note: Margin is managed via LiteAPI dashboard default. Do NOT hardcode margin here.
-  const sdk = liteApi(apiKey);
+  console.log("Prebook called with offerId:", offerId);
   console.log("prebook request:", {
     offerId,
     checkin,
     checkout,
-    adults,
+    adults: adultsNum,
+    children: childrenNum,
     hotelId,
-    environment: resolvedEnvironment,
+    environment: resolvedEnvironment
   });
 
+  const sdk = liteApi(apiKey);
+
   try {
-    const result = await sdk.preBook({
+    // Do NOT pass margin here (we use the LiteAPI dashboard default)
+    const prebookResponse = await sdk.preBook({
       offerId,
-      usePaymentSdk: true,
+      usePaymentSdk: true
     });
 
-    const fail = liteApiFailure(result);
+    const fail = liteApiFailure(prebookResponse);
     if (fail) {
       console.error("preBook failed:", fail);
       return sendLiteApiError(res, fail);
     }
 
-     // --- NEW SAFETY CHECK HERE ---
-    if (result?.status !== "success" || !result?.data?.prebookId) {
-      console.error("preBook invalid response structure:", result);
-      return res.status(400).json({ error: "Invalid prebook response from LiteAPI" });
-    }
-
-    console.log("prebook success:", {
-      status: result?.status,
-      prebookId: result?.data?.prebookId,
-      transactionId: result?.data?.transactionId,
-    });
-
-    // Return the full prebook response (contains prebookId and payment fields when enabled)
-    return res.json({ success: result });
+    return res.json(prebookResponse);
   } catch (error) {
     console.error("preBook exception:", error?.response?.data || error);
     return res.status(500).json({ error: "Internal server error" });

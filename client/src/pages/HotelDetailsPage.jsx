@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
-import { prebookOffer, searchRates } from "../utils/api.js";
+import { prebook, searchRates } from "../utils/api.js";
 import useSearchStore from "../stores/useSearchStore.js";
 import ImageGallery from "../components/hotel/ImageGallery.jsx";
 import HotelInfo from "../components/hotel/HotelInfo.jsx";
@@ -112,7 +112,7 @@ function HotelDetailsPage() {
       setPaymentLoading(true);
       setPaymentError(null);
 
-      const prebookResponse = await prebookOffer({
+      const prebookResponse = await prebook({
         offerId,
         checkin: resolvedCheckin,
         checkout: resolvedCheckout,
