@@ -41,6 +41,7 @@ app.options("*", cors(corsOptions));
 
 const prod_apiKey = process.env.PROD_API_KEY;
 const sandbox_apiKey = process.env.SAND_API_KEY;
+const today = new Date();
 
 /** LiteAPI SDK returns errors in multiple formats. This function detects them. */
 function liteApiFailure(body) {
@@ -94,7 +95,20 @@ app.get("/search-hotels", async (req, res) => {
   const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
+  const checkinDate = checkin || today.toISOString().split('T')[0];
+  const checkoutDate = checkout || new Date(today.getTime() + 1*24*60*60*1000).toISOString().split('T')[0]; // 1 day later  
+
   try {
+    if (!city) {
+      return res.status(400).json({ error: "city is required" });
+    }
+
+    if (!countryCode) {
+      return res.status(400).json({
+        error: "countryCode is required (e.g. FR for France, US for USA)"
+      });
+    }
+
     if (!apiKey || String(apiKey).trim() === "") {
       const keyName = environment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
       return res.status(401).json({
@@ -124,8 +138,8 @@ app.get("/search-hotels", async (req, res) => {
       occupancies: [{ adults: parseInt(adults, 10) }],
       currency: "USD",
       guestNationality: "US",
-      checkin,
-      checkout,
+      checkin: checkinDate,
+      checkout: checkoutDate,
     });
 
     const ratesFail = liteApiFailure(fullRatesResponse);
