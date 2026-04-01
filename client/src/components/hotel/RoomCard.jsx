@@ -36,7 +36,7 @@ function RoomCard({ offer, onSelect }) {
           </div>
         </div>
         <Button type="button" onClick={onSelect}>
-          Select
+          Book now
         </Button>
       </div>
     </div>
@@ -44,4 +44,3 @@ function RoomCard({ offer, onSelect }) {
 }
 
 export default RoomCard;
-

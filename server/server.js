@@ -89,6 +89,11 @@ function sendLiteApiError(res, failure) {
 
 app.use(bodyParser.json());
 
+// Health check endpoint for deployments/monitoring.
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", environment: process.env.NODE_ENV });
+});
+
 app.get("/search-hotels", async (req, res) => {
   console.log("Search endpoint hit");
   const { checkin, checkout, adults, city, countryCode, environment } = req.query;
@@ -281,98 +286,193 @@ app.get("/search-rates", async (req, res) => {
 });
 
 app.post("/prebook", async (req, res) => {
-  const { rateId, environment, voucherCode } = req.body;
-  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+  // Step 1: Validate input
+  const {
+    offerId: offerIdRaw,
+    checkin,
+    checkout,
+    adults,
+    hotelId,
+    environment,
+  } = req.body || {};
 
-  const offerId = rateId != null ? String(rateId).trim() : "";
-  if (!offerId) {
-    return res.status(400).json({ error: "rateId (offerId from rates search) is required" });
+  const offerId = offerIdRaw != null ? String(offerIdRaw).trim() : "";
+
+  const missing = [];
+  if (!offerId) missing.push("offerId");
+  if (!checkin) missing.push("checkin");
+  if (!checkout) missing.push("checkout");
+  if (adults == null || String(adults).trim() === "") missing.push("adults");
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: `Missing required field(s): ${missing.join(", ")}`,
+    });
   }
+
+  // Step 2: Choose environment + api key (sandbox/production)
+  const resolvedEnvironment =
+    environment ||
+    process.env.LITEAPI_ENVIRONMENT ||
+    (process.env.NODE_ENV === "production" ? "production" : "sandbox");
+  const apiKey =
+    resolvedEnvironment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+
   if (!apiKey || String(apiKey).trim() === "") {
-    const keyName = environment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
+    const keyName = resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
+    return res.status(401).json({ error: `Missing ${keyName} in .env` });
+  }
+
+  // Step 3: Call LiteAPI preBook to lock the offer and enable Payment SDK
+  // Note: Margin is managed via LiteAPI dashboard default. Do NOT hardcode margin here.
+  const sdk = liteApi(apiKey);
+  console.log("prebook request:", {
+    offerId,
+    checkin,
+    checkout,
+    adults,
+    hotelId,
+    environment: resolvedEnvironment,
+  });
+
+  try {
+    const result = await sdk.preBook({
+      offerId,
+      usePaymentSdk: true,
+    });
+
+    const fail = liteApiFailure(result);
+    if (fail) {
+      console.error("preBook failed:", fail);
+      return sendLiteApiError(res, fail);
+    }
+
+    console.log("prebook success:", {
+      status: result?.status,
+      prebookId: result?.data?.prebookId,
+      transactionId: result?.data?.transactionId,
+    });
+
+    // Return the full prebook response (contains prebookId and payment fields when enabled)
+    return res.json({ success: result });
+  } catch (error) {
+    console.error("preBook exception:", error?.response?.data || error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+async function handleBook(req, res) {
+  // Step 1: Accept input from query (GET) or body (POST)
+  const source = req.method === "POST" ? req.body : req.query;
+
+  const {
+    prebookId,
+    transactionId,
+    environment,
+    holder: holderRaw,
+    guestFirstName,
+    guestLastName,
+    guestEmail,
+  } = source || {};
+
+  // Step 2: Validate required fields
+  const missing = [];
+  if (!prebookId) missing.push("prebookId");
+  if (!transactionId) missing.push("transactionId");
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: `Missing required field(s): ${missing.join(", ")}`,
+    });
+  }
+
+  // Step 3: Choose environment + api key (sandbox/production)
+  const resolvedEnvironment =
+    environment ||
+    process.env.LITEAPI_ENVIRONMENT ||
+    (process.env.NODE_ENV === "production" ? "production" : "sandbox");
+  const apiKey =
+    resolvedEnvironment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+
+  if (!apiKey || String(apiKey).trim() === "") {
+    const keyName = resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
     return res.status(401).json({ error: `Missing ${keyName} in .env` });
   }
 
   const sdk = liteApi(apiKey);
-  const bodyData = {
-    offerId,
-    usePaymentSdk: true,
+
+  // Step 4: Build a safe default holder for testing
+  const defaultHolder = {
+    title: "Mr",
+    firstName: "John",
+    lastName: "Doe",
+    phone: "+10000000000",
+    email: "john.doe@example.com",
   };
-  if (voucherCode != null && String(voucherCode).trim() !== "") {
-    bodyData.voucherCode = String(voucherCode).trim();
-  }
 
-  try {
-    const result = await sdk.preBook(bodyData);
-
-    if (result.status === "failed") {
-      const errMsg =
-        result.error?.message ||
-        (Array.isArray(result.errors) ? result.errors.join(", ") : "Prebook failed");
-      const code = result.error?.code;
-      console.error("preBook failed:", result);
-      const httpStatus =
-        typeof code === "number" && code >= 400 && code < 600 ? code : 400;
-      return res.status(httpStatus).json({
-        error: errMsg,
-        code,
-        details: result.error || result.errors,
-      });
+  let holder = defaultHolder;
+  if (holderRaw) {
+    try {
+      holder = typeof holderRaw === "string" ? JSON.parse(holderRaw) : holderRaw;
+    } catch (e) {
+      return res.status(400).json({ error: "Invalid holder JSON" });
     }
-
-    if (result.status === "success" && result.data) {
-      return res.json({ success: result });
-    }
-
-    console.error("Unexpected preBook result:", result);
-    return res.status(502).json({ error: "Unexpected prebook response from LiteAPI" });
-  } catch (err) {
-    console.error("preBook exception:", err);
-    return res.status(500).json({
-      error: err.message || "Internal Server Error",
-    });
-  }
-});
-
-// Complete Booking Endpoint
-app.get('/book', async (req, res) => {
-  try {
-    const { prebookId, transactionId, holder } = req.query;
-
-    if (!prebookId || !transactionId) {
-      return res.status(400).json({ error: "Missing prebookId or transactionId" });
-    }
-
-    const bookData = {
-      prebookId,
-      transactionId,
-      holder: holder ? JSON.parse(holder) : {
-        title: "Mr",
-        firstName: "John",
-        lastName: "Doe",
-        phone: "+1234567890",
-        email: "john.doe@example.com"
-      }
+  } else if (guestFirstName || guestLastName || guestEmail) {
+    holder = {
+      ...defaultHolder,
+      firstName: guestFirstName || defaultHolder.firstName,
+      lastName: guestLastName || defaultHolder.lastName,
+      email: guestEmail || defaultHolder.email,
     };
+  }
 
-    const result = await liteApi.rates.book(bookData);
+  // Step 5: Call LiteAPI booking endpoint
+  console.log("book request:", {
+    prebookId,
+    transactionId,
+    environment: resolvedEnvironment,
+    holderEmail: holder?.email,
+  });
 
-    // Optional: Send confirmation email here later
+  try {
+    const hasRatesBook = typeof sdk?.rates?.book === "function";
+    const result = hasRatesBook
+      ? await sdk.rates.book({ prebookId, transactionId, holder })
+      : await sdk.book({
+          prebookId,
+          transactionId,
+          holder,
+          payment: { method: "TRANSACTION_ID", transactionId },
+        });
 
-    res.json({
-      success: true,
-      booking: result,
-      message: "Booking completed successfully!"
+    const fail = liteApiFailure(result);
+    if (fail) {
+      console.error("book failed:", fail);
+      return sendLiteApiError(res, fail);
+    }
+
+    const bookingData = result?.data || result;
+    console.log("book success:", {
+      status: result?.status,
+      bookingId: bookingData?.bookingId,
     });
 
+    // Step 6: Return booking reference
+    return res.json({
+      success: true,
+      bookingId: bookingData?.bookingId,
+      booking: bookingData,
+    });
   } catch (error) {
-    console.error('Booking error:', error);
-    res.status(500).json({
+    console.error("book exception:", error?.response?.data || error);
+    return res.status(500).json({
       success: false,
-      error: error.message || "Booking failed"
+      error: error.message || "Booking failed",
     });
   }
-});
+}
+
+// Booking confirmation endpoint (GET kept for compatibility; POST recommended for integrations)
+app.get("/book", handleBook);
+app.post("/book", handleBook);
 
 // Serve the client-side application
 app.get("/", (req, res) => {

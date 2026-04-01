@@ -6,6 +6,7 @@ import HomePage from "./pages/HomePage.jsx";
 import SearchResultsPage from "./pages/SearchResultsPage.jsx";
 import HotelDetailsPage from "./pages/HotelDetailsPage.jsx";
 import CheckoutPage from "./pages/CheckoutPage.jsx";
+import Confirmation from "./pages/Confirmation.jsx";
 
 const pageTransition = {
   initial: { opacity: 0, y: 16 },
@@ -25,6 +26,7 @@ function App() {
           <Route path="/search" element={<SearchResultsPage />} />
           <Route path="/hotel/:hotelId" element={<HotelDetailsPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/confirmation" element={<Confirmation />} />
         </Routes>
       </motion.div>
     </Layout>
@@ -32,4 +34,3 @@ function App() {
 }
 
 export default App;
-

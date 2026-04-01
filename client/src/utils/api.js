@@ -55,6 +55,43 @@ export async function prebook({ rateId, environment, voucherCode }) {
   return handleResponse(res);
 }
 
+export async function prebookOffer({
+  offerId,
+  checkin,
+  checkout,
+  adults,
+  hotelId,
+  environment
+}) {
+  const res = await fetch(`${BASE}/prebook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      offerId,
+      checkin,
+      checkout,
+      adults,
+      hotelId,
+      environment
+    })
+  });
+  return handleResponse(res);
+}
+
+export async function bookReservation({
+  prebookId,
+  transactionId,
+  environment,
+  holder
+}) {
+  const res = await fetch(`${BASE}/book`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prebookId, transactionId, environment, holder })
+  });
+  return handleResponse(res);
+}
+
 export async function completeBooking({
   prebookId,
   transactionId,
@@ -74,4 +111,3 @@ export async function completeBooking({
   const res = await fetch(`${BASE}/book?${params.toString()}`);
   return handleResponse(res);
 }
-
