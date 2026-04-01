@@ -1,4 +1,7 @@
 // Initialize the SDK with your API key
+const API_BASE = import.meta.env.DEV 
+  ? "http://localhost:5000" 
+  : "https://your-render-backend-url.onrender.com";   // we'll set this later for production
 
 async function searchHotels() {
 	document.getElementById("loader").style.display = "block";
@@ -19,7 +22,7 @@ async function searchHotels() {
 
 	try {
 		const response = await fetch(
-			`http://localhost:3000/search-hotels?checkin=${encodeURIComponent(checkin)}&checkout=${encodeURIComponent(checkout)}&adults=${encodeURIComponent(adults)}&city=${encodeURIComponent(city)}&countryCode=${encodeURIComponent(countryCode)}&environment=${encodeURIComponent(environment)}`
+			`${API_BASE}/search-hotels?checkin=${encodeURIComponent(checkin)}&checkout=${encodeURIComponent(checkout)}&adults=${encodeURIComponent(adults)}&city=${encodeURIComponent(city)}&countryCode=${encodeURIComponent(countryCode)}&environment=${encodeURIComponent(environment)}`
 		);
 		const body = await response.json();
 
@@ -43,7 +46,7 @@ async function searchHotels() {
 		displayRatesAndHotels(rates);
 	} catch (error) {
 		console.error("Error fetching hotels:", error);
-		hotelsDiv.innerHTML = "<p class=\"red\">Network error. Is the server running on port 3000?</p>";
+		hotelsDiv.innerHTML = `<p class="red">Network error. Is the server running on port ${API_BASE}?</p>`;
 	} finally {
 		document.getElementById("loader").style.display = "none";
 	}
@@ -169,7 +172,7 @@ async function proceedToBooking(rateId) {
 			}
 			console.log(bodyData);
 
-			const prebookResponse = await fetch(`http://localhost:3000/prebook`, {
+			const prebookResponse = await fetch(`${API_BASE}/prebook`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",

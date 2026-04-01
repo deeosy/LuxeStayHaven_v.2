@@ -1,11 +1,34 @@
-const BASE = "/api";
+const BASE =
+  import.meta.env.VITE_API_BASE ||
+  (import.meta.env.DEV ? "http://localhost:5000" : window.location.origin);
+
+function ensureCountryCode(city, countryCode) {
+  if (countryCode && typeof countryCode === "string") return countryCode.toUpperCase();
+  if (!city) return countryCode || "";
+  const c = String(city).toLowerCase();
+  if (c.includes("paris")) return "FR";
+  if (c.includes("london")) return "GB";
+  if (c.includes("new york") || c.includes("nyc")) return "US";
+  if (c.includes("tokyo")) return "JP";
+  if (c.includes("dubai")) return "AE";
+  if (c.includes("bali")) return "ID";
+  return countryCode || "";
+}
 
 async function handleResponse(res) {
+  const text = await res.text();
+
   if (!res.ok) {
-    const text = await res.text();
     throw new Error(text || "Request failed");
   }
-  return res.json();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Expected JSON but received: ${String(text).slice(0, 80)}`
+    );
+  }
 }
 
 export async function searchHotels({
@@ -16,12 +39,13 @@ export async function searchHotels({
   countryCode,
   environment
 }) {
+  const cc = ensureCountryCode(city, countryCode);
   const params = new URLSearchParams({
     checkin,
     checkout,
     adults: String(adults),
     city,
-    countryCode,
+    countryCode: cc,
     environment
   });
   const res = await fetch(`${BASE}/search-hotels?${params.toString()}`);

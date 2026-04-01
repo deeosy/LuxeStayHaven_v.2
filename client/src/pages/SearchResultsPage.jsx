@@ -46,7 +46,7 @@ function SearchResultsPage() {
       checkout,
       adults,
       city,
-      countryCode,
+      countryCode: countryCode.toUpperCase() || "FR",
       environment
     })
       .then((data) => {

@@ -110,6 +110,8 @@ function HotelDetailsPage() {
 
     try {
       setPaymentLoading(true);
+      setPaymentError(null);
+
       const prebookResponse = await prebookOffer({
         offerId,
         checkin: resolvedCheckin,
@@ -119,53 +121,65 @@ function HotelDetailsPage() {
         environment
       });
 
-      const success = prebookResponse?.success?.data || prebookResponse?.success || prebookResponse?.data;
-      const secretKey = success?.secretKey;
-      const prebookId = success?.prebookId;
-      const transactionId = success?.transactionId;
-      const currency = success?.price?.currency || "USD";
-      const amount = success?.price?.amount;
+      // Safer parsing of prebook response
+      const prebookData = prebookResponse?.success?.data || 
+                          prebookResponse?.data || 
+                          prebookResponse;
+
+      const secretKey = prebookData?.secretKey;
+      const prebookId = prebookData?.prebookId;
+      const transactionId = prebookData?.transactionId;
+      const currency = prebookData?.currency || "USD";
+      const amount = prebookData?.price?.amount || prebookData?.totalAmount || 0;
 
       if (!secretKey || !prebookId || !transactionId) {
-        throw new Error("Prebook did not return payment details. Ensure usePaymentSdk is enabled.");
+        throw new Error("Prebook did not return required payment details. Please try again.");
       }
 
       setPrebookMeta({ prebookId, transactionId });
 
+      // Load the SDK script
       await loadLitePaymentSdk();
 
-      const publicKey = environment === "sandbox" ? "sandbox" : "live";
-      const returnUrl = `${window.location.origin}/confirmation?prebookId=${encodeURIComponent(
-        prebookId
-      )}&transactionId=${encodeURIComponent(
-        transactionId
-      )}&environment=${encodeURIComponent(environment || "")}`;
+      const isSandbox = environment === "sandbox" || !environment;
+      const returnUrl = `${window.location.origin}/confirmation?prebookId=${encodeURIComponent(prebookId)}&transactionId=${encodeURIComponent(transactionId)}&environment=${encodeURIComponent(environment || "sandbox")}`;
 
       const config = {
-        publicKey,
-        secretKey,
+        publicKey: isSandbox ? "sandbox" : "live",
+        secretKey: secretKey,
         targetElement: "#payment-container",
-        returnUrl,
-        amount: amount || 0,
-        currency,
-        submitButton: { text: "Pay" },
+        returnUrl: returnUrl,
+        amount: amount,
+        currency: currency,
         options: {
-          business: { name: "LuxeStayHaven" }
+          business: { 
+            name: "LuxeStayHaven" 
+          },
+          theme: "flat"   // or "dark" if you prefer
         }
       };
 
-      const container = document.querySelector("#payment-container");
+      console.log("Payment SDK config:", config);
+
+      // Clear previous payment form
+      const container = document.getElementById("payment-container");
       if (container) container.innerHTML = "";
 
-      const payment = new window.LiteAPIPayment(config);
-      payment.handlePayment();
+      // Initialize the payment form (this renders the form + pay button)
+      const paymentInstance = new window.LiteAPIPayment(config);
+      
+      // Do NOT call .handlePayment() or .on() — the SDK renders automatically
       setPaymentReady(true);
+
+      // Optional: scroll to the payment section
       setTimeout(() => {
-        const el = document.querySelector("#secure-checkout");
+        const el = document.getElementById("secure-checkout");
         if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 50);
+      }, 100);
+
     } catch (err) {
-      setPaymentError(err.message || "Failed to initialize payment");
+      console.error("Booking/Payment init error:", err);
+      setPaymentError(err.message || "Failed to initialize secure payment. Please try again.");
     } finally {
       setPaymentLoading(false);
     }

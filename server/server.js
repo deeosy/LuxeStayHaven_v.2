@@ -346,6 +346,12 @@ app.post("/prebook", async (req, res) => {
       return sendLiteApiError(res, fail);
     }
 
+     // --- NEW SAFETY CHECK HERE ---
+    if (result?.status !== "success" || !result?.data?.prebookId) {
+      console.error("preBook invalid response structure:", result);
+      return res.status(400).json({ error: "Invalid prebook response from LiteAPI" });
+    }
+
     console.log("prebook success:", {
       status: result?.status,
       prebookId: result?.data?.prebookId,
