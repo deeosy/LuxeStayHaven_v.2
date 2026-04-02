@@ -1,7 +1,7 @@
 import React from "react";
 import RoomCard from "./RoomCard.jsx";
 
-function RoomList({ rateInfo, onSelectOffer }) {
+function RoomList({ rateInfo, onSelectOffer, selectedOfferId }) {
   const flattened = (rateInfo || []).flat();
 
   if (!flattened.length) {
@@ -22,6 +22,7 @@ function RoomList({ rateInfo, onSelectOffer }) {
           <RoomCard
             key={`${offer.offerId}-${index}`}
             offer={offer}
+            selected={selectedOfferId === offer.offerId}
             onSelect={() => onSelectOffer(offer)}
           />
         ))}
@@ -31,4 +32,3 @@ function RoomList({ rateInfo, onSelectOffer }) {
 }
 
 export default RoomList;
-

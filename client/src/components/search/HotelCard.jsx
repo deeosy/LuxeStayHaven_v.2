@@ -4,12 +4,11 @@ import { motion } from "framer-motion";
 import Button from "../ui/Button.jsx";
 import Badge from "../ui/Badge.jsx";
 import { formatCurrency } from "../../utils/formatters.js";
-import useBookingStore from "../../stores/useBookingStore.js";
 import useSearchStore from "../../stores/useSearchStore.js";
+import FavoriteButton from "../ui/FavoriteButton.jsx";
 
 function HotelCard({ rate }) {
   const navigate = useNavigate();
-  const { setSelectedHotel, setSelectedOffer } = useBookingStore();
   const { checkin, checkout, adults } = useSearchStore();
 
   const hotel = rate.hotel || {};
@@ -24,6 +23,8 @@ function HotelCard({ rate }) {
   const original = offer?.retailRate?.suggestedSellingPrice?.[0]?.amount;
   const refundableTag = offer?.cancellationPolicies?.refundableTag;
   const boardName = offer?.boardName;
+  const stars = hotel.stars || hotel.starRating || hotel.rating || null;
+  const reviews = hotel.reviewCount || hotel.reviewsCount || hotel.reviews || null;
 
   const handleViewDetails = () => {
     navigate(
@@ -31,22 +32,13 @@ function HotelCard({ rate }) {
     );
   };
 
-  const handleBookNow = () => {
-    setSelectedHotel(hotel);
-    setSelectedOffer({
-      offerId: roomType?.offerId,
-      rateName: offer?.name,
-      price,
-      boardName,
-      refundableTag
-    });
-    navigate("/checkout");
-  };
-
   return (
     <motion.article
       whileHover={{ y: -4 }}
-      className="flex flex-col rounded-2xl bg-white shadow-soft overflow-hidden border border-slate-100"
+      className="flex flex-col rounded-2xl bg-white shadow-soft overflow-hidden border border-slate-100 cursor-pointer"
+      onClick={handleViewDetails}
+      role="button"
+      tabIndex={0}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
         <img
@@ -56,6 +48,9 @@ function HotelCard({ rate }) {
         />
         <div className="absolute top-3 left-3 rounded-full bg-black/50 px-2.5 py-1 text-xs text-white">
           {hotel.category || "Luxury hotel"}
+        </div>
+        <div className="absolute top-3 right-3">
+          <FavoriteButton hotelId={hotel.id} />
         </div>
       </div>
       <div className="flex-1 flex flex-col px-4 pt-3 pb-4 gap-3">
@@ -69,8 +64,13 @@ function HotelCard({ rate }) {
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <div className="flex items-center gap-0.5 text-accent">
-            <span>★★★★★</span>
+          <div className="flex items-center gap-2 text-textMedium">
+            <div className="text-accent font-semibold">
+              {stars ? `${stars}★` : "★"}
+            </div>
+            <div className="text-textLight">
+              {reviews ? `${reviews} reviews` : "Premium stay"}
+            </div>
           </div>
           {refundableTag === "RFN" ? (
             <Badge color="success">Refundable</Badge>
@@ -83,7 +83,7 @@ function HotelCard({ rate }) {
         <div className="mt-auto flex items-end justify-between">
           <div className="text-xs text-textMedium">
             <div className="text-[11px] uppercase tracking-wide text-textLight">
-              From
+              Starting from
             </div>
             <div className="flex items-baseline gap-1">
               <span className="text-lg font-semibold text-primary">
@@ -99,11 +99,15 @@ function HotelCard({ rate }) {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleViewDetails}>
+            <Button
+              variant="secondary"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleViewDetails();
+              }}
+            >
               View details
-            </Button>
-            <Button variant="primary" onClick={handleBookNow}>
-              Book now
             </Button>
           </div>
         </div>
@@ -113,4 +117,3 @@ function HotelCard({ rate }) {
 }
 
 export default HotelCard;
-

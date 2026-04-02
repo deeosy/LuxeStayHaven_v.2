@@ -3,11 +3,17 @@ import Button from "../ui/Button.jsx";
 import Badge from "../ui/Badge.jsx";
 import { formatCurrency } from "../../utils/formatters.js";
 
-function RoomCard({ offer, onSelect }) {
+function RoomCard({ offer, onSelect, selected = false }) {
   const { rateName, board, refundableTag, retailRate, originalRate } = offer;
 
   return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm">
+    <div
+      className={`flex items-center justify-between rounded-xl border bg-white px-3 py-3 text-sm transition ${
+        selected
+          ? "border-accent ring-2 ring-accent/20"
+          : "border-slate-200 hover:border-slate-300"
+      }`}
+    >
       <div className="space-y-1">
         <div className="font-medium text-textDark">{rateName}</div>
         <div className="flex gap-2 text-xs">
@@ -17,6 +23,7 @@ function RoomCard({ offer, onSelect }) {
           ) : (
             <Badge color="error">Non-refundable</Badge>
           )}
+          {selected && <Badge color="success">Selected</Badge>}
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -35,8 +42,8 @@ function RoomCard({ offer, onSelect }) {
             )}
           </div>
         </div>
-        <Button type="button" onClick={onSelect}>
-          Proceed to checkout
+        <Button type="button" variant={selected ? "primary" : "secondary"} onClick={onSelect}>
+          {selected ? "Selected" : "Select this room"}
         </Button>
       </div>
     </div>
