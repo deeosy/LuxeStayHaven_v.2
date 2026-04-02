@@ -1,187 +1,148 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import useBookingStore from "../../stores/useBookingStore.js";
 import useSearchStore from "../../stores/useSearchStore.js";
-import { prebook, completeBooking } from "../../utils/api.js";
-import { formatCurrency } from "../../utils/formatters.js";
-import Button from "../ui/Button.jsx";
-
+import { extractPrebookData, initializeLitePayment, prebook } from "../../utils/api.js";
 
 function PaymentStep() {
-  const {
-    selectedOffer,
-    prebookData,
-    setPrebookData,
-    guestDetails,
-    setBookingConfirmation,
-    setStep
-  } = useBookingStore();
-  const { environment } = useSearchStore();
+  const { selectedOffer, guestDetails, prebookData, setPrebookData, setStep } =
+    useBookingStore();
+  const { checkin, checkout, adults, environment } = useSearchStore();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const hasInitialized = useRef(false);
-
-  const redirectData = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    const prebookId = params.get("prebookId");
-    const transactionId = params.get("transactionId");
-    if (prebookId && transactionId) {
-      return { prebookId, transactionId };
-    }
-    return null;
-  }, []);
+  const initInFlight = useRef(false);
 
   useEffect(() => {
-    if (!selectedOffer || hasInitialized.current || prebookData) return;
+    const params = new URLSearchParams(window.location.search);
+    const prebookId = params.get("prebookId");
+    const transactionId =
+      params.get("transactionId") ||
+      params.get("transactionID") ||
+      params.get("transaction_id") ||
+      params.get("payment_intent");
+
+    if (prebookId && transactionId) {
+      setStep("confirmation");
+    }
+  }, [setStep]);
+
+  useEffect(() => {
+    if (hasInitialized.current) return;
+    if (initInFlight.current) return;
+    if (!selectedOffer?.offerId) return;
+    if (!checkin || !checkout) return;
+
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    prebook({ rateId: selectedOffer.offerId, environment })
-      .then((data) => {
+    initInFlight.current = true;
+    hasInitialized.current = true;
+
+    (async () => {
+      try {
+        // Step 1: Prebook (locks the offer and returns secretKey when usePaymentSdk=true)
+        setLoading(true);
+        setError(null);
+
+        const prebookResponse = await prebook({
+          offerId: selectedOffer.offerId,
+          hotelId: selectedOffer.hotelId,
+          checkin,
+          checkout,
+          adults,
+          environment
+        });
+
+        const { prebookId, transactionId, secretKey } =
+          extractPrebookData(prebookResponse);
+
+        if (!prebookId || !transactionId || !secretKey) {
+          throw new Error("Prebook response missing required payment fields.");
+        }
+
+        // Store for reference/debugging
+        setPrebookData({ prebookId, transactionId, secretKey });
+
+        // Step 2: Build returnUrl back to /checkout so step can advance to confirmation.
+        // Important: We include the PREBOOK transactionId (tr_ct_...) so booking finalization uses the correct reference.
+        const returnUrl = `${window.location.origin}/checkout?prebookId=${encodeURIComponent(
+          prebookId
+        )}&transactionId=${encodeURIComponent(
+          transactionId
+        )}&environment=${encodeURIComponent(environment || "sandbox")}`;
+
+        // Step 3: Load the official LiteAPI Payment SDK and render the secure card form.
+        // Do NOT pass amount manually when usePaymentSdk=true.
+        await initializeLitePayment({
+          prebookResponse,
+          returnUrl,
+          targetElement: "#payment-container",
+          environment: environment || "sandbox"
+        });
         if (cancelled) return;
-        const success = data.success?.data || data.success;
-        if (!success) throw new Error("Invalid prebook response");
-        const payload = {
-          prebookId: success.prebookId,
-          transactionId: success.transactionId,
-          secretKey: success.secretKey,
-          price: success.price?.amount,
-          currency: success.price?.currency
-        };
-        setPrebookData(payload);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err.message || "Failed to prepare payment");
-      })
-      .finally(() => {
+      } catch (err) {
+        if (!cancelled) {
+          hasInitialized.current = false;
+          setError(err.message || "Failed to initialize payment.");
+        }
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+        initInFlight.current = false;
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [selectedOffer, environment, prebookData, setPrebookData]);
-
-  useEffect(() => {
-    if (!prebookData || hasInitialized.current) return;
-    if (typeof window.initializePaymentForm !== "function") return;
-    hasInitialized.current = true;
-    window.initializePaymentForm(
-      prebookData.secretKey,
-      prebookData.prebookId,
-      prebookData.transactionId,
-      guestDetails.firstName,
-      guestDetails.lastName,
-      guestDetails.email,
-      environment
-    );
-  }, [prebookData, guestDetails]);
-
-  useEffect(() => {
-    // Handle redirect back from LiteAPI with booking parameters
-    const params = new URLSearchParams(window.location.search);
-    const prebookId = params.get("prebookId");
-    const transactionId = params.get("transactionId");
-    const firstName = params.get("guestFirstName");
-    const lastName = params.get("guestLastName");
-    const email = params.get("guestEmail");
-
-    if (prebookId && transactionId && !hasInitialized.current) {
-      hasInitialized.current = true;
-      handleComplete({
-        prebookId,
-        transactionId,
-        firstName,
-        lastName,
-        email,
-        environment: params.get("environment") || environment
-      });
-    }
-  }, []);
-
-  const handleComplete = async (redirectData = null) => {
-    const data = redirectData || {
-      prebookId: prebookData?.prebookId,
-      transactionId: prebookData?.transactionId,
-      firstName: guestDetails.firstName,
-      lastName: guestDetails.lastName,
-      email: guestDetails.email,
-      environment
-    };
-
-    if (!data.prebookId || !data.transactionId) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await completeBooking(data);
-      
-      if (result.success && result.data) {
-        setBookingConfirmation(result.data);
-        setStep("confirmation");
-        // Clear query params if we came from a redirect
-        if (redirectData) {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      } else {
-        throw new Error("Booking failed");
-      }
-    } catch (err) {
-      setError(err.message || "Payment failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [
+    adults,
+    checkin,
+    checkout,
+    environment,
+    selectedOffer,
+    setPrebookData
+  ]);
 
   return (
     <section className="rounded-2xl bg-white border border-slate-100 shadow-soft p-4 sm:p-5 space-y-4 text-sm">
       <div>
         <h2 className="font-heading text-lg text-primary mb-1">Payment</h2>
         <p className="text-xs text-textMedium">
-          Securely complete your booking with our payment partner.
+          Securely complete your booking. The payment form below is provided by LiteAPI.
         </p>
       </div>
-      {selectedOffer && (
-        <div className="rounded-xl bg-background px-3 py-2 text-xs text-textMedium">
-          <div className="flex justify-between">
-            <span>Total</span>
-            <span>{formatCurrency(selectedOffer.price)}</span>
-          </div>
-          {environment === "sandbox" && (
-            <p className="mt-1 text-[11px] text-warning">
-              Sandbox mode: use test card 4242 4242 4242 4242, any 3-digit CVV,
-              any future expiry.
-            </p>
-          )}
+
+      {environment === "sandbox" && (
+        <div className="rounded-xl bg-warning/5 border border-warning/20 px-3 py-2 text-xs text-warning">
+          Sandbox mode: use test card 4242 4242 4242 4242, any future expiry, any 3-digit CVC.
         </div>
       )}
+
       {error && (
         <div className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
           {error}
         </div>
       )}
-      <div id="pe" className="w-full" />
-      {!prebookData && (
-        <Button
-          type="button"
-          className="w-full lp-submit-button"
-          onClick={handleComplete}
-          disabled={loading}
-        >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Processing…
-            </span>
-          ) : (
-            "Pay now"
-          )}
-        </Button>
+
+      {loading && (
+        <div className="text-xs text-textMedium flex items-center gap-2">
+          <span className="h-3.5 w-3.5 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+          Preparing secure checkout…
+        </div>
       )}
+
+      {prebookData?.prebookId && (
+        <div className="text-[11px] text-textLight">
+          Ref: {prebookData.prebookId}
+          {guestDetails?.email ? ` · ${guestDetails.email}` : ""}
+        </div>
+      )}
+
+      <div
+        id="payment-container"
+        className="mt-2 border border-slate-100 rounded-xl p-4 bg-white"
+      />
     </section>
   );
 }
 
 export default PaymentStep;
-

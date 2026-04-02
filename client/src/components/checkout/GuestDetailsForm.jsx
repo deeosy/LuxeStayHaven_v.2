@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import useBookingStore from "../../stores/useBookingStore.js";
+import { useNavigate } from "react-router-dom";
 import Input from "../ui/Input.jsx";
 import Button from "../ui/Button.jsx";
 
 function GuestDetailsForm() {
-  const { guestDetails, setGuestDetails, setStep } = useBookingStore();
+  const navigate = useNavigate();
+  const { selectedOffer, guestDetails, setGuestDetails, setStep } =
+    useBookingStore();
   const [local, setLocal] = useState(guestDetails);
   const [errors, setErrors] = useState({});
 
@@ -26,6 +29,20 @@ function GuestDetailsForm() {
     setGuestDetails(local);
     setStep("payment");
   };
+
+  if (!selectedOffer?.offerId) {
+    return (
+      <section className="rounded-2xl bg-white border border-slate-100 shadow-soft p-4 sm:p-5 space-y-3 text-sm">
+        <h2 className="font-heading text-lg text-primary">No room selected</h2>
+        <p className="text-xs text-textMedium">
+          Please return to the hotel page and select a room to continue to checkout.
+        </p>
+        <Button type="button" onClick={() => navigate("/search")}>
+          Back to search
+        </Button>
+      </section>
+    );
+  }
 
   return (
     <form
@@ -90,4 +107,3 @@ function GuestDetailsForm() {
 }
 
 export default GuestDetailsForm;
-

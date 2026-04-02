@@ -36,7 +36,7 @@ function RoomCard({ offer, onSelect }) {
           </div>
         </div>
         <Button type="button" onClick={onSelect}>
-          Book now
+          Proceed to checkout
         </Button>
       </div>
     </div>
