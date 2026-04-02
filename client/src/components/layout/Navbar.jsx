@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import useSearchStore from "../../stores/useSearchStore.js";
 
 function Navbar() {
   const { environment, setEnvironment } = useSearchStore();
   const [scrolled, setScrolled] = useState(false);
-  const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -38,60 +38,150 @@ function Navbar() {
         </Link>
 
         <div className="hidden md:flex items-center gap-6 text-sm">
-          <button
-            type="button"
-            className={`relative flex items-center gap-2 rounded-full px-3 py-1 text-xs border border-white/20 bg-white/5`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-            <span>Search</span>
-          </button>
-
-          <div className="flex items-center gap-2 text-xs">
-            <span className="uppercase tracking-wide text-white/70">
-              Env:
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setEnvironment(
-                  environment === "sandbox" ? "production" : "sandbox"
-                )
-              }
-              className="flex items-center rounded-full border border-white/20 bg-white/10 px-2 py-0.5"
-              aria-label="Toggle environment"
-            >
-              <span
-                className={`text-[10px] px-2 py-0.5 rounded-full ${
-                  environment === "sandbox"
-                    ? "bg-white text-primary"
-                    : "text-white/70"
-                }`}
-              >
-                Sandbox
-              </span>
-              <span
-                className={`text-[10px] px-2 py-0.5 rounded-full ${
-                  environment === "production"
-                    ? "bg-white text-primary"
-                    : "text-white/70"
-                }`}
-              >
-                Prod
-              </span>
-            </button>
+          <div className="flex items-center gap-5 text-xs text-white/90">
+            <Link to="/" className="hover:text-accent transition">
+              Home
+            </Link>
+            <Link to="/search" className="hover:text-accent transition">
+              Hotels
+            </Link>
+            <a href="/#destinations" className="hover:text-accent transition">
+              Destinations
+            </a>
+            <a href="/#about" className="hover:text-accent transition">
+              About
+            </a>
+            <Link to="/confirmation" className="hover:text-accent transition">
+              My Bookings
+            </Link>
           </div>
 
-          <Link
-            to={location.pathname === "/checkout" ? "/" : "/checkout"}
-            className="text-xs font-medium hover:text-accent transition"
-          >
-            My Bookings
-          </Link>
+          {import.meta.env.DEV && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="uppercase tracking-wide text-white/70">Env:</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setEnvironment(
+                    environment === "sandbox" ? "production" : "sandbox"
+                  )
+                }
+                className="flex items-center rounded-full border border-white/20 bg-white/10 px-2 py-0.5"
+                aria-label="Toggle environment"
+              >
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    environment === "sandbox"
+                      ? "bg-white text-primary"
+                      : "text-white/70"
+                  }`}
+                >
+                  Sandbox
+                </span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    environment === "production"
+                      ? "bg-white text-primary"
+                      : "text-white/70"
+                  }`}
+                >
+                  Prod
+                </span>
+              </button>
+            </div>
+          )}
         </div>
+
+        <button
+          type="button"
+          className="md:hidden inline-flex items-center justify-center rounded-full border border-white/20 bg-white/10 px-3 py-2 text-xs"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label="Toggle menu"
+          aria-expanded={menuOpen}
+        >
+          <span className="sr-only">Menu</span>
+          <span className="block h-0.5 w-4 bg-white/90" />
+          <span className="block h-0.5 w-4 bg-white/90 mt-1" />
+          <span className="block h-0.5 w-4 bg-white/90 mt-1" />
+        </button>
       </nav>
+
+      {menuOpen && (
+        <div className="md:hidden border-t border-white/10 bg-primary/90 backdrop-blur">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col gap-3 text-xs text-white/90">
+            <Link to="/" className="hover:text-accent transition" onClick={() => setMenuOpen(false)}>
+              Home
+            </Link>
+            <Link
+              to="/search"
+              className="hover:text-accent transition"
+              onClick={() => setMenuOpen(false)}
+            >
+              Hotels
+            </Link>
+            <a
+              href="/#destinations"
+              className="hover:text-accent transition"
+              onClick={() => setMenuOpen(false)}
+            >
+              Destinations
+            </a>
+            <a
+              href="/#about"
+              className="hover:text-accent transition"
+              onClick={() => setMenuOpen(false)}
+            >
+              About
+            </a>
+            <Link
+              to="/confirmation"
+              className="hover:text-accent transition"
+              onClick={() => setMenuOpen(false)}
+            >
+              My Bookings
+            </Link>
+
+            {import.meta.env.DEV && (
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                <div className="uppercase tracking-wide text-white/70 text-[10px]">
+                  Environment
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEnvironment(
+                      environment === "sandbox" ? "production" : "sandbox"
+                    )
+                  }
+                  className="flex items-center rounded-full border border-white/20 bg-white/10 px-2 py-0.5"
+                  aria-label="Toggle environment"
+                >
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      environment === "sandbox"
+                        ? "bg-white text-primary"
+                        : "text-white/70"
+                    }`}
+                  >
+                    Sandbox
+                  </span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      environment === "production"
+                        ? "bg-white text-primary"
+                        : "text-white/70"
+                    }`}
+                  >
+                    Prod
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   );
 }
 
 export default Navbar;
-

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { Helmet } from "react-helmet-async";
 import { searchRates } from "../utils/api.js";
 import useSearchStore from "../stores/useSearchStore.js";
 import useBookingStore from "../stores/useBookingStore.js";
@@ -169,8 +170,114 @@ function HotelDetailsPage() {
     setModifyOpen(false);
   };
 
+  const seo = useMemo(() => {
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+    const name = hotelInfo?.hotelName || hotelInfo?.name || "Luxury hotel";
+    const city = hotelInfo?.cityName || hotelInfo?.city || "";
+    const address = hotelInfo?.address || "";
+    const title = city
+      ? `Book ${name} in ${city} - LuxeStayHaven`
+      : `Book ${name} - LuxeStayHaven`;
+
+    const flattened = (rateInfo || []).flat();
+    const min = flattened.reduce((acc, o) => {
+      const n = Number(o?.retailRate);
+      if (!Number.isFinite(n)) return acc;
+      return acc == null ? n : Math.min(acc, n);
+    }, null);
+
+    const description = resolvedCheckin && resolvedCheckout
+      ? `Reserve ${name}${city ? ` in ${city}` : ""} for ${resolvedCheckin} to ${resolvedCheckout}. Premium stays, secure checkout, and curated room options.`
+      : `Reserve ${name}${city ? ` in ${city}` : ""}. Premium stays, secure checkout, and curated room options.`;
+
+    const canonical = `${baseUrl}/hotel/${encodeURIComponent(hotelId)}`;
+    const ogImage =
+      hotelInfo?.images?.[0] || hotelInfo?.image || hotelInfo?.mainImage || "";
+
+    const hotelSchema = {
+      "@context": "https://schema.org",
+      "@type": "Hotel",
+      name,
+      url: canonical,
+      address: address
+        ? {
+            "@type": "PostalAddress",
+            streetAddress: address
+          }
+        : undefined
+    };
+
+    const offerSchema =
+      min != null
+        ? {
+            "@context": "https://schema.org",
+            "@type": "Offer",
+            name: `Rooms at ${name}`,
+            price: String(min),
+            priceCurrency: "USD",
+            availability: "https://schema.org/InStock",
+            url: canonical
+          }
+        : null;
+
+    const breadcrumbSchema = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          position: 1,
+          name: "Home",
+          item: `${baseUrl}/`
+        },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: "Hotels",
+          item: `${baseUrl}/search`
+        },
+        {
+          "@type": "ListItem",
+          position: 3,
+          name,
+          item: canonical
+        }
+      ]
+    };
+
+    return {
+      title,
+      description,
+      canonical,
+      ogImage,
+      hotelSchema,
+      offerSchema,
+      breadcrumbSchema
+    };
+  }, [hotelId, hotelInfo, rateInfo, resolvedCheckin, resolvedCheckout]);
+
   return (
     <section className="bg-background py-8 sm:py-10">
+      <Helmet>
+        <title>{seo.title}</title>
+        <link rel="canonical" href={seo.canonical} />
+        <meta name="description" content={seo.description} />
+        <meta property="og:title" content={seo.title} />
+        <meta property="og:description" content={seo.description} />
+        <meta property="og:type" content="website" />
+        {seo.ogImage ? <meta property="og:image" content={seo.ogImage} /> : null}
+        <script type="application/ld+json">
+          {JSON.stringify(seo.hotelSchema)}
+        </script>
+        {seo.offerSchema ? (
+          <script type="application/ld+json">
+            {JSON.stringify(seo.offerSchema)}
+          </script>
+        ) : null}
+        <script type="application/ld+json">
+          {JSON.stringify(seo.breadcrumbSchema)}
+        </script>
+      </Helmet>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {loading && (
           <div className="text-sm text-textMedium">Loading hotel details…</div>

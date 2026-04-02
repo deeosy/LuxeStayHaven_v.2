@@ -24,7 +24,7 @@ const features = [
 
 function WhyLuxeStay() {
   return (
-    <section className="bg-white py-12 sm:py-16">
+    <section id="about" className="bg-white py-12 sm:py-16">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-2xl mb-8">
           <h2 className="font-heading text-2xl sm:text-3xl text-primary mb-2">
@@ -73,4 +73,3 @@ function WhyLuxeStay() {
 }
 
 export default WhyLuxeStay;
-

@@ -82,7 +82,7 @@ function FeaturedDestinations() {
   };
 
   return (
-    <section className="bg-background py-12 sm:py-16">
+    <section id="destinations" className="bg-background py-12 sm:py-16">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-end justify-between mb-8">
           <div>

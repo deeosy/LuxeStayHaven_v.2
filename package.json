@@ -20,7 +20,8 @@
     "express": "^4.19.2",
     "liteapi-node-sdk": "^3.0.4",
     "lucide-react": "^1.7.0",
-    "morgan": "^1.10.1"
+    "morgan": "^1.10.1",
+    "react-helmet-async": "^3.0.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
