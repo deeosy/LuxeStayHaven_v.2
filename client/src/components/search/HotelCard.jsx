@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { formatCurrency } from "../../utils/formatters.js";
 import useSearchStore from "../../stores/useSearchStore.js";
@@ -7,17 +7,35 @@ import FavoriteButton from "../ui/FavoriteButton.jsx";
 
 function HotelCard({ rate, searchParams }) {
   const { checkin, checkout, adults, environment } = useSearchStore();
+  const location = useLocation();
 
   const hotel = rate.hotel || {};
-  const roomType = rate.roomTypes?.[0];
-  const offer = roomType?.rates?.[0];
+  const roomTypes = Array.isArray(rate?.roomTypes) ? rate.roomTypes : [];
+  const cheapestOffer = roomTypes.reduce((best, rt) => {
+    const offers = Array.isArray(rt?.rates) ? rt.rates : [];
+    for (const o of offers) {
+      const raw =
+        o?.retailRate?.total?.[0]?.amount ??
+        o?.retailRate?.amount ??
+        o?.retailRate?.totalAmount ??
+        null;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      if (!Number.isFinite(n)) continue;
+      if (!best || n < best.amount) {
+        best = { offer: o, amount: n };
+      }
+    }
+    return best;
+  }, null);
+  const offer = cheapestOffer?.offer || null;
 
   const image =
     hotel.main_photo ||
     "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1200&q=80";
 
-  const price = offer?.retailRate?.total?.[0]?.amount;
-  const original = offer?.retailRate?.suggestedSellingPrice?.[0]?.amount;
+  const price = cheapestOffer?.amount ?? null;
+  const originalRaw = offer?.retailRate?.suggestedSellingPrice?.[0]?.amount ?? null;
+  const original = originalRaw == null ? null : Number(originalRaw);
   const stars = hotel.stars || hotel.starRating || hotel.rating || null;
   const reviews = hotel.reviewCount || hotel.reviewsCount || hotel.reviews || null;
 
@@ -29,11 +47,14 @@ function HotelCard({ rate, searchParams }) {
   };
 
   // Card click navigates to the hotel details page while preserving search params.
-  const detailsHref = `/hotel/${hotel.id}?checkin=${encodeURIComponent(
-    resolved.checkin
-  )}&checkout=${encodeURIComponent(resolved.checkout)}&adults=${encodeURIComponent(
-    String(resolved.adults)
-  )}&environment=${encodeURIComponent(resolved.environment)}`;
+  const detailsParams = new URLSearchParams(location.search || "");
+  detailsParams.set("checkin", resolved.checkin);
+  detailsParams.set("checkout", resolved.checkout);
+  detailsParams.set("adults", String(resolved.adults));
+  detailsParams.set("environment", resolved.environment);
+  const detailsHref = detailsParams.toString()
+    ? `/hotel/${hotel.id}?${detailsParams.toString()}`
+    : `/hotel/${hotel.id}`;
 
   return (
     <motion.article
@@ -84,7 +105,7 @@ function HotelCard({ rate, searchParams }) {
                 <span className="text-lg font-semibold text-primary">
                   {formatCurrency(price)}
                 </span>
-                {original && original !== price && (
+                {Number.isFinite(original) && original !== price && (
                   <span className="text-[11px] text-textLight line-through">
                     {formatCurrency(original)}
                   </span>

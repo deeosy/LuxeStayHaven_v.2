@@ -21,6 +21,12 @@ function startOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 function addDays(date, n) {
   const d = new Date(date);
   d.setDate(d.getDate() + n);
@@ -125,6 +131,8 @@ function SearchBar({
   const navigate = useNavigate();
   const { setDestination, setDates, setAdults, setOccupancies, environment } = useSearchStore();
 
+  const today = useMemo(() => startOfDay(new Date()), []);
+
   const tomorrow = useMemo(() => {
     const t = new Date();
     t.setDate(t.getDate() + 1);
@@ -138,6 +146,7 @@ function SearchBar({
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [loadingPlaces, setLoadingPlaces] = useState(false);
+  const [geoError, setGeoError] = useState("");
 
   const [openPanel, setOpenPanel] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -155,6 +164,22 @@ function SearchBar({
 
   const barRef = useRef(null);
   const overlayRef = useRef(null);
+
+  function closePanel() {
+    if (openPanel === "dates" && pendingCheckin && !checkoutDate) {
+      setCheckoutDate(addDays(pendingCheckin, 1));
+    }
+    setOpenPanel(null);
+    setPendingCheckin(null);
+  }
+
+  function setPanel(next) {
+    if (openPanel === "dates" && next !== "dates" && pendingCheckin && !checkoutDate) {
+      setCheckoutDate(addDays(pendingCheckin, 1));
+      setPendingCheckin(null);
+    }
+    setOpenPanel(next);
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -178,12 +203,7 @@ function SearchBar({
         barRef.current &&
         !barRef.current.contains(e.target)
       ) {
-        if (pendingCheckin && !checkoutDate) {
-          const co = addDays(pendingCheckin, 1);
-          setCheckoutDate(co);
-        }
-        setOpenPanel(null);
-        setPendingCheckin(null);
+        closePanel();
       }
     }
     document.addEventListener("mousedown", onClick);
@@ -267,15 +287,13 @@ function SearchBar({
       : "";
     if (cc === "UK") cc = "GB";
     setCountryCode(cc);
-    setOpenPanel(null);
+    setGeoError("");
+    closePanel();
   }
 
   function aroundMe() {
     if (!navigator.geolocation) {
-      setLocalDestination("Around my area");
-      setPlaceId(null);
-      setCountryCode("");
-      setOpenPanel(null);
+      setGeoError("Your browser doesn’t support location. Enter a destination instead.");
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -285,14 +303,20 @@ function SearchBar({
         setQuery("");
         setPlaceId(`geo:${coords.latitude},${coords.longitude}`);
         setCountryCode("");
-        setOpenPanel(null);
+        setGeoError("");
+        closePanel();
       },
-      () => {
-        setLocalDestination("Around my area");
-        setQuery("");
+      (err) => {
+        const code = err?.code;
+        const denied = code === 1;
         setPlaceId(null);
         setCountryCode("");
-        setOpenPanel(null);
+        setGeoError(
+          denied
+            ? "Location access was denied. Enter a destination instead."
+            : "Couldn’t get your location. Enter a destination instead."
+        );
+        setPanel("where");
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
@@ -326,6 +350,7 @@ function SearchBar({
 
   function selectDate(d) {
     if (!d) return;
+    if (startOfDay(d) < today) return;
     if (!pendingCheckin) {
       setPendingCheckin(d);
       setCheckinDate(d);
@@ -353,12 +378,14 @@ function SearchBar({
   }
 
   function submitSearch() {
+    const effectiveCheckout = checkoutDate || addDays(checkinDate, 1);
+    if (!checkoutDate) setCheckoutDate(effectiveCheckout);
     const payload = {
       destination,
       placeId,
       countryCode,
       checkin: formatISO(checkinDate),
-      checkout: formatISO(checkoutDate),
+      checkout: formatISO(effectiveCheckout),
       rooms
     };
     setDestination({ placeId, destinationName: destination, countryCode });
@@ -410,8 +437,8 @@ function SearchBar({
         animate={{ opacity: 1, y: 0 }}
         className="rounded-2xl bg-white/70 backdrop-blur shadow-soft p-2 sm:p-2.5"
       >
-        <div ref={barRef} className="grid grid-cols-[1fr_auto] items-stretch gap-2">
-          <div className="grid md:grid-cols-[1fr_1fr_1fr] gap-2 ">
+        <div ref={barRef} className="grid grid-cols-1 sm:grid-cols-[1fr_auto] items-stretch gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="w-full text-left rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm">
               <div className="text-[11px] text-textLight ">Where</div>
               <input
@@ -422,11 +449,12 @@ function SearchBar({
                   const next = e.target.value;
                   setLocalDestination(next);
                   setQuery(next);
-                  setOpenPanel("where");
+                  setGeoError("");
+                  setPanel("where");
                 }}
                 onFocus={() => {
                   setQuery("");
-                  setOpenPanel("where");
+                  setPanel("where");
                 }}
                 className="w-full bg-white text-sm text-textDark placeholder:text-textLight outline-none"
               />
@@ -435,7 +463,7 @@ function SearchBar({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setOpenPanel("dates")}
+                onClick={() => (openPanel === "dates" ? closePanel() : setPanel("dates"))}
                 className="w-full text-left rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm"
               >
                 <div className="text-[11px] text-textLight">Dates</div>
@@ -448,7 +476,7 @@ function SearchBar({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setOpenPanel("guests")}
+                onClick={() => (openPanel === "guests" ? closePanel() : setPanel("guests"))}
                 className="w-full text-left rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm"
               >
                 <div className="text-[11px] text-textLight">Guests</div>
@@ -456,11 +484,11 @@ function SearchBar({
               </button>
             </div>
           </div>
-          <div className="flex items-stretch ">
+          <div className="flex items-stretch">
             <button
               type="button"
               onClick={submitSearch}
-              className="group inline-flex items-center justify-center rounded-xl bg-accent text-white px-4 md:px-5"
+              className="group w-full inline-flex items-center justify-center rounded-xl bg-accent text-white px-4 md:px-5"
               aria-label="Search"
             >
               <svg
@@ -506,13 +534,7 @@ function SearchBar({
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (openPanel === "dates" && pendingCheckin && !checkoutDate) {
-                        setCheckoutDate(addDays(pendingCheckin, 1));
-                        setPendingCheckin(null);
-                      }
-                      setOpenPanel(null);
-                    }}
+                    onClick={closePanel}
                     className="h-9 w-9 inline-flex items-center justify-center rounded-full border border-slate-200"
                     aria-label="Close"
                   >
@@ -531,6 +553,7 @@ function SearchBar({
                         const next = e.target.value;
                         setLocalDestination(next);
                         setQuery(next);
+                        setGeoError("");
                       }}
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-textDark placeholder:text-textLight outline-none"
                     />
@@ -550,6 +573,11 @@ function SearchBar({
                           </span>
                           Around my area
                         </button>
+                      )}
+                      {geoError && (
+                        <div className="px-3 pb-2 text-[11px] text-textLight">
+                          {geoError}
+                        </div>
                       )}
                       <div className="max-h-[60vh] overflow-y-auto">
                         {query.trim().length > 0 && query.trim().length < 3 ? (
@@ -604,20 +632,32 @@ function SearchBar({
                               </div>
                               <div className="grid grid-cols-7 gap-1">
                                 {days.map((d, idx) => {
+                                  const isPast = d ? startOfDay(d) < today : false;
+                                  const isToday =
+                                    d &&
+                                    d.getFullYear() === today.getFullYear() &&
+                                    d.getMonth() === today.getMonth() &&
+                                    d.getDate() === today.getDate();
                                   const st = dayState(d);
                                   return (
                                     <button
                                       key={idx}
                                       type="button"
-                                      disabled={!d}
+                                      disabled={!d || isPast}
                                       onClick={() => selectDate(d)}
                                       className={[
                                         "h-10 rounded-lg text-sm",
-                                        !d ? "opacity-0" : "hover:bg-slate-100",
+                                        !d
+                                          ? "opacity-0"
+                                          : isPast
+                                          ? "text-slate-300 cursor-not-allowed"
+                                          : "hover:bg-slate-100",
                                         st === "start" || st === "end"
                                           ? "bg-accent text-white"
                                           : st === "between"
                                           ? "bg-accent/10"
+                                          : isToday
+                                          ? "bg-white ring-1 ring-accent/60 font-medium"
                                           : "bg-white"
                                       ].join(" ")}
                                     >
@@ -756,7 +796,7 @@ function SearchBar({
                         </button>
                         <button
                           type="button"
-                          onClick={() => setOpenPanel(null)}
+                          onClick={closePanel}
                           className="rounded-full bg-accent text-white px-4 py-1.5 text-sm"
                         >
                           Done
@@ -790,6 +830,11 @@ function SearchBar({
                         </span>
                         Around my area
                       </button>
+                    )}
+                    {geoError && (
+                      <div className="px-3 pb-2 text-[11px] text-textLight">
+                        {geoError}
+                      </div>
                     )}
                     <div className="max-h-72 overflow-y-auto">
                       {query.trim().length > 0 && query.trim().length < 3 ? (
@@ -830,7 +875,7 @@ function SearchBar({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8 }}
                     className="pointer-events-auto fixed -translate-x-1/2 rounded-2xl bg-white shadow-soft border border-slate-100 p-4 w-[44rem]  max-w-[92vw]"
-                    style={{ top: barRect.bottom + 10, left: barRect.left + barRect.width / 50 }}
+                    style={{ top: barRect.bottom + 10, left: barRect.left + barRect.width / 2 }}
                   >
                     <div className="grid grid-cols-2 gap-4">
                       {[0, 1].map((i) => {
@@ -848,20 +893,32 @@ function SearchBar({
                             </div>
                             <div className="grid grid-cols-7 gap-1">
                               {days.map((d, idx) => {
+                                const isPast = d ? startOfDay(d) < today : false;
+                                const isToday =
+                                  d &&
+                                  d.getFullYear() === today.getFullYear() &&
+                                  d.getMonth() === today.getMonth() &&
+                                  d.getDate() === today.getDate();
                                 const st = dayState(d);
                                 return (
                                   <button
                                     key={idx}
                                     type="button"
-                                    disabled={!d}
+                                    disabled={!d || isPast}
                                     onClick={() => selectDate(d)}
                                     className={[
                                       "h-9 rounded-lg text-sm",
-                                      !d ? "opacity-0" : "hover:bg-slate-100",
+                                      !d
+                                        ? "opacity-0"
+                                        : isPast
+                                        ? "text-slate-300 cursor-not-allowed"
+                                        : "hover:bg-slate-100",
                                       st === "start" || st === "end"
                                         ? "bg-accent text-white"
                                         : st === "between"
                                         ? "bg-accent/10"
+                                        : isToday
+                                        ? "bg-white ring-1 ring-accent/60 font-medium"
                                         : "bg-white"
                                     ].join(" ")}
                                   >
@@ -1004,7 +1061,7 @@ function SearchBar({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setOpenPanel(null)}
+                        onClick={closePanel}
                         className="rounded-full bg-accent text-white px-4 py-1.5 text-sm"
                       >
                         Done

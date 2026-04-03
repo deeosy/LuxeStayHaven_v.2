@@ -8,8 +8,7 @@
     "dev:client": "cd client && npm run dev",
     "build:client": "cd client && npm run build",
     "build": "cd client && npm install && npm run build",
-    "start": "node server/server.js",
-    // "start": "npm run build:client && node server/server.js",
+    "start": "npm run build:client && node server/server.js",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\""
   },
   "keywords": [],
