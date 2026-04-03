@@ -715,12 +715,44 @@ async function handleBook(req, res) {
 app.get("/book", handleBook);
 app.post("/book", handleBook);
 
-// Serve the client-side application
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "../client/index.html"));
+app.get("/sitemap.xml", (req, res) => {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const proto = forwardedProto || req.protocol || "https";
+  const host = req.headers.host || "example.com";
+  const origin = `${proto}://${host}`;
+
+  const urls = [
+    `${origin}/`,
+    `${origin}/destinations/paris`,
+    `${origin}/destinations/new-york`,
+    `${origin}/destinations/tokyo`,
+    `${origin}/destinations/dubai`,
+    `${origin}/destinations/rome`,
+    `${origin}/destinations/bali`,
+    `${origin}/destinations/london`
+  ];
+
+  const lastmod = new Date().toISOString();
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    urls
+      .map((loc) => {
+        return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${lastmod}</lastmod>\n  </url>`;
+      })
+      .join("\n") +
+    `\n</urlset>\n`;
+
+  res.setHeader("Content-Type", "application/xml; charset=utf-8");
+  res.status(200).send(xml);
 });
 
+app.use(express.static(path.join(__dirname, "../client/public")));
 app.use(express.static(path.join(__dirname, "../client")));
+
+// Serve the client-side application (SPA fallback for clean routes like /destinations/paris).
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../client/index.html"));
+});
 
 const basePort = Number(process.env.PORT || 5000);
 

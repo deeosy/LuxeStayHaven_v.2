@@ -12,6 +12,7 @@ import Input from "../components/ui/Input.jsx";
 import Button from "../components/ui/Button.jsx";
 import Badge from "../components/ui/Badge.jsx";
 import { formatCurrency, formatDate } from "../utils/formatters.js";
+import { trackOnce, trackEvent } from "../utils/analytics.js";
 
 function useQuery() {
   const { search } = useLocation();
@@ -112,6 +113,18 @@ function HotelDetailsPage() {
     };
   }, [fetchRates, resolvedAdults, resolvedCheckin, resolvedCheckout, setAdults, setDates]);
 
+  useEffect(() => {
+    if (!hotelInfo || loading || error) return;
+    const name = hotelInfo?.hotelName || hotelInfo?.name || "";
+    trackOnce(`hotel_view:${hotelId}:${resolvedCheckin}:${resolvedCheckout}:${resolvedAdults}`, "hotel_viewed", {
+      hotel_id: hotelId,
+      hotel_name: name || undefined,
+      checkin: resolvedCheckin || undefined,
+      checkout: resolvedCheckout || undefined,
+      adults: resolvedAdults
+    });
+  }, [error, hotelId, hotelInfo, loading, resolvedAdults, resolvedCheckin, resolvedCheckout]);
+
   const handleSelectRoom = (offer) => {
     const offerId = offer?.offerId;
     if (!offerId) {
@@ -129,6 +142,20 @@ function HotelDetailsPage() {
       setError("Missing check-in/check-out dates. Please go back and search again.");
       return;
     }
+
+    trackEvent("booking_started", {
+      hotel_id: hotelId,
+      hotel_name: (hotelInfo?.hotelName || hotelInfo?.name || "") || undefined,
+      offer_id: selectedRoom.offerId,
+      checkin: resolvedCheckin,
+      checkout: resolvedCheckout,
+      adults: resolvedAdults,
+      currency: "USD",
+      value:
+        selectedRoom?.retailRate != null && Number.isFinite(Number(selectedRoom.retailRate))
+          ? Number(selectedRoom.retailRate)
+          : undefined
+    });
 
     resetCheckout();
     setSelectedHotel({ ...hotelInfo, hotelId });

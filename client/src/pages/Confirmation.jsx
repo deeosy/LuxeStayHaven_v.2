@@ -4,6 +4,7 @@ import useSearchStore from "../stores/useSearchStore.js";
 import Button from "../components/ui/Button.jsx";
 import { finalizeBooking } from "../utils/api.js";
 import { formatCurrency, formatDate } from "../utils/formatters.js";
+import { trackOnce } from "../utils/analytics.js";
 
 function normalizeTransactionId(searchParams) {
   return (
@@ -106,12 +107,6 @@ function Confirmation() {
   const environment =
     searchParams.get("environment") || defaultEnvironment || "sandbox";
 
-  console.log("Confirmation page loaded with params:", {
-    prebookId,
-    transactionId: normalizeTransactionId(searchParams),
-    fullUrl: window.location.href
-  });
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [bookingPayload, setBookingPayload] = useState(null);
@@ -202,6 +197,20 @@ function Confirmation() {
     if (!prebookId || !transactionId) return;
     runFinalize();
   }, [prebookId, transactionId, runFinalize]);
+
+  useEffect(() => {
+    if (loading || error || !bookingPayload) return;
+    const revenue =
+      details.amount != null && Number.isFinite(Number(details.amount)) ? Number(details.amount) : null;
+    const currency = (details.currency || "USD").toUpperCase();
+    trackOnce(`booking_complete:${details.bookingId || prebookId}`, "booking_complete", {
+      booking_id: details.bookingId || prebookId || undefined,
+      hotel_name: details.hotelName || undefined,
+      currency,
+      revenue: revenue == null ? undefined : revenue,
+      value: revenue == null ? undefined : revenue
+    });
+  }, [bookingPayload, details.amount, details.bookingId, details.currency, details.hotelName, error, loading, prebookId]);
 
   if (!prebookId || !transactionId) {
     return (

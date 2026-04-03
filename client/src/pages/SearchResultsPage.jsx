@@ -9,6 +9,7 @@ import HotelCardSkeleton from "../components/search/HotelCardSkeleton.jsx";
 import Button from "../components/ui/Button.jsx";
 import Input from "../components/ui/Input.jsx";
 import { formatDate } from "../utils/formatters.js";
+import { trackOnce } from "../utils/analytics.js";
 
 function getCheapestNightlyAmount(rate) {
   let lowest = null;
@@ -362,6 +363,18 @@ function SearchResultsPage() {
     if (!checkin || !checkout) return;
     if (!city && !placeId && !(latitude && longitude)) return;
 
+    trackOnce(`search:${location.search}`, "search_performed", {
+      city: city || undefined,
+      countryCode: countryCode || undefined,
+      placeId: placeId || undefined,
+      checkin,
+      checkout,
+      adults,
+      refundable: refundableParam == null ? undefined : String(refundableParam),
+      starRating: starRatingParam || undefined,
+      boardType: boardTypeParam || undefined
+    });
+
     const destinationLabel = city
       ? `${city}${countryCode ? `, ${countryCode}` : ""}`
       : destinationName || "Around my area";
@@ -430,10 +443,16 @@ function SearchResultsPage() {
     return `Hotels in ${city} | LuxeStayHaven`;
   }, [query]);
 
+  const canonical = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}${location.pathname}${location.search}`;
+  }, [location.pathname, location.search]);
+
   return (
     <section className="bg-background min-h-[60vh] py-8 sm:py-10">
       <Helmet>
         <title>{title}</title>
+        <link rel="canonical" href={canonical} />
         <meta
           name="description"
           content="Browse luxury hotels with transparent rates, refundable options, and premium stays curated by LuxeStayHaven."
