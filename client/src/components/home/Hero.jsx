@@ -7,7 +7,7 @@ const heroImage =
 
 function Hero() {
   return (
-    <section className="relative min-h-[82vh] overflow-hidden">
+    <section className="relative min-h-[82vh] ">
       <img
         src={heroImage}
         alt="Luxury resort overlooking the ocean"
@@ -15,7 +15,7 @@ function Hero() {
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/15 to-black/25" />
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-24 flex flex-col gap-10 md:gap-48 ">
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-24 flex flex-col gap-10 md:gap-20 ">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -35,6 +35,9 @@ function Hero() {
           </p>
         </motion.div>
 
+        {/*
+          Testing custom <SearchBar /> again (with improved destination autocomplete).
+        */}
         <SearchBar />
       </div>
     </section>
@@ -42,4 +45,3 @@ function Hero() {
 }
 
 export default Hero;
-

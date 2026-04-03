@@ -3,16 +3,61 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import useSearchStore from "../stores/useSearchStore.js";
 import { searchHotels } from "../utils/api.js";
+import SearchBar from "../components/home/SearchBar.jsx";
 import HotelCard from "../components/search/HotelCard.jsx";
 import HotelCardSkeleton from "../components/search/HotelCardSkeleton.jsx";
 import Button from "../components/ui/Button.jsx";
 import Input from "../components/ui/Input.jsx";
-import GuestSelector from "../components/ui/GuestSelector.jsx";
 import { formatDate } from "../utils/formatters.js";
 
 function useQuery() {
   const { search } = useLocation();
   return React.useMemo(() => new URLSearchParams(search), [search]);
+}
+
+function decodeOccupancies(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {}
+  try {
+    return JSON.parse(decodeURIComponent(value));
+  } catch {}
+  try {
+    return JSON.parse(atob(value));
+  } catch {}
+  return null;
+}
+
+function buildInitialRooms({ occupanciesRaw, roomsCount, totalAdults, totalChildren }) {
+  const parsed = decodeOccupancies(occupanciesRaw);
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    return parsed.map((o) => ({
+      adults: Number(o?.adults) > 0 ? Number(o.adults) : 2,
+      children: Array.isArray(o?.children)
+        ? o.children.length
+        : Number(o?.children) >= 0
+        ? Number(o.children)
+        : Array.isArray(o?.childrenAges)
+        ? o.childrenAges.length
+        : 0
+    }));
+  }
+
+  const rooms = Number.isFinite(roomsCount) && roomsCount > 0 ? roomsCount : 1;
+  const adults = Number.isFinite(totalAdults) && totalAdults > 0 ? totalAdults : 2;
+  const children = Number.isFinite(totalChildren) && totalChildren >= 0 ? totalChildren : 0;
+
+  const arr = Array.from({ length: rooms }, () => ({ adults: 1, children: 0 }));
+  let remainingAdults = adults - rooms;
+  let idx = 0;
+  while (remainingAdults > 0) {
+    arr[idx].adults += 1;
+    remainingAdults -= 1;
+    idx = (idx + 1) % rooms;
+  }
+  arr[0].children = children;
+  return arr;
 }
 
 function SearchResultsPage() {
@@ -35,34 +80,85 @@ function SearchResultsPage() {
     environment
   } = useSearchStore();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [localCity, setLocalCity] = useState(query.get("city") || "");
-  const [localCheckin, setLocalCheckin] = useState(
-    query.get("checkin") || storeCheckin || ""
-  );
-  const [localCheckout, setLocalCheckout] = useState(
-    query.get("checkout") || storeCheckout || ""
-  );
-  const [localAdults, setLocalAdults] = useState(
-    Number(query.get("adults") || storeAdults || 2)
-  );
+  const location = useLocation();
+  const [roomsSummary, setRoomsSummary] = useState({ rooms: null, children: null });
 
   useEffect(() => {
-    setLocalCity(query.get("city") || "");
-    setLocalCheckin(query.get("checkin") || storeCheckin || "");
-    setLocalCheckout(query.get("checkout") || storeCheckout || "");
-    setLocalAdults(Number(query.get("adults") || storeAdults || 2));
-  }, [query, storeCheckin, storeCheckout, storeAdults]);
+    const raw = query.get("occupancies") || "";
+    if (!raw) {
+      const rooms = Number(query.get("rooms") || 1);
+      const children = Number(query.get("children") || 0);
+      setRoomsSummary({
+        rooms: Number.isFinite(rooms) && rooms > 0 ? rooms : 1,
+        children: Number.isFinite(children) && children >= 0 ? children : 0
+      });
+      return;
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {}
+    if (!parsed) {
+      try {
+        parsed = JSON.parse(decodeURIComponent(raw));
+      } catch {}
+    }
+    if (!parsed) {
+      try {
+        parsed = JSON.parse(atob(raw));
+      } catch {}
+    }
+    if (!Array.isArray(parsed)) {
+      const rooms = Number(query.get("rooms") || 1);
+      const children = Number(query.get("children") || 0);
+      setRoomsSummary({
+        rooms: Number.isFinite(rooms) && rooms > 0 ? rooms : 1,
+        children: Number.isFinite(children) && children >= 0 ? children : 0
+      });
+      return;
+    }
+    const rooms = parsed.length || 1;
+    const children = parsed.reduce((acc, o) => {
+      const rawChildren = o?.children;
+      if (Array.isArray(rawChildren)) return acc + rawChildren.length;
+      const rawAges = o?.childrenAges;
+      if (Array.isArray(rawAges)) return acc + rawAges.length;
+      if (typeof rawChildren === "number" && Number.isFinite(rawChildren)) {
+        return acc + rawChildren;
+      }
+      if (typeof rawChildren === "string") {
+        const n = Number(rawChildren);
+        if (Number.isFinite(n)) return acc + n;
+      }
+      return acc;
+    }, 0);
+    setRoomsSummary({ rooms, children });
+  }, [query]);
 
   useEffect(() => {
     const city = query.get("city");
     const countryCode = query.get("countryCode") || "";
+    const placeId = query.get("placeId") || "";
+    const latitude = query.get("latitude") || "";
+    const longitude = query.get("longitude") || "";
+    const radius = query.get("radius") || "";
+    const occupancies = query.get("occupancies") || "";
     const checkin = query.get("checkin") || "";
     const checkout = query.get("checkout") || "";
     const adults = Number(query.get("adults") || 2);
 
-    if (!city || !checkin || !checkout) return;
+    if (!checkin || !checkout) return;
+    if (!city && !placeId && !(latitude && longitude)) return;
 
-    setDestination({ placeId: null, destinationName: `${city}, ${countryCode}` });
+    const destinationLabel = city
+      ? `${city}${countryCode ? `, ${countryCode}` : ""}`
+      : destinationName || "Around my area";
+
+    setDestination({
+      placeId: placeId || null,
+      destinationName: destinationLabel,
+      countryCode: countryCode.toUpperCase()
+    });
     setDates({ checkin, checkout });
     setAdults(adults);
 
@@ -73,8 +169,13 @@ function SearchResultsPage() {
       checkin,
       checkout,
       adults,
-      city,
+      city: city || "",
       countryCode: countryCode.toUpperCase(),
+      placeId: placeId || "",
+      latitude: latitude || "",
+      longitude: longitude || "",
+      radius: radius || "",
+      occupancies: occupancies || "",
       environment
     })
       .then((data) => {
@@ -132,69 +233,23 @@ function SearchResultsPage() {
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
         <div className="space-y-3">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const city = localCity.trim();
-              if (!city || !localCheckin || !localCheckout) return;
-
-              const next = new URLSearchParams();
-              next.set("city", city);
-              next.set("checkin", localCheckin);
-              next.set("checkout", localCheckout);
-              next.set("adults", String(localAdults || 2));
-
-              const countryFromQuery = (query.get("countryCode") || "").trim();
-              const countryFromStore = (destinationName || "")
-                .split(",")
-                .pop()
-                ?.trim();
-              const countryCode = (countryFromQuery || countryFromStore || "")
-                .toUpperCase();
-              if (countryCode) next.set("countryCode", countryCode);
-
-              navigate(`/search?${next.toString()}`);
-            }}
-            className="w-full max-w-6xl mx-auto rounded-2xl bg-white/30 backdrop-blur shadow-soft p-4 sm:p-5 space-y-3"
-          >
-            <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.6fr)_auto] items-end">
-              <Input
-                id="city"
-                name="city"
-                label="Destination"
-                placeholder="e.g. Paris"
-                value={localCity}
-                onChange={(e) => setLocalCity(e.target.value)}
-              />
-
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  id="checkin"
-                  name="checkin"
-                  label="Check-in"
-                  type="date"
-                  value={localCheckin}
-                  onChange={(e) => setLocalCheckin(e.target.value)}
-                />
-                <Input
-                  id="checkout"
-                  name="checkout"
-                  label="Check-out"
-                  type="date"
-                  value={localCheckout}
-                  onChange={(e) => setLocalCheckout(e.target.value)}
-                />
-              </div>
-
-              <GuestSelector value={localAdults || 2} onChange={setLocalAdults} />
-
-              <div className="flex items-end">
-                <Button type="submit" className="w-full h-[42px] sm:h-[44px]">
-                  Search
-                </Button>
-              </div>
-            </div>
-          </form>
+          <SearchBar
+            key={location.search}
+            compact
+            initialDestination={
+              query.get("city")
+                ? `${query.get("city")}${query.get("countryCode") ? `, ${query.get("countryCode")}` : ""}`
+                : destinationName
+            }
+            initialCheckin={query.get("checkin") || storeCheckin}
+            initialCheckout={query.get("checkout") || storeCheckout}
+            initialRooms={buildInitialRooms({
+              occupanciesRaw: query.get("occupancies") || "",
+              roomsCount: Number(query.get("rooms") || 1),
+              totalAdults: Number(query.get("adults") || storeAdults || 2),
+              totalChildren: Number(query.get("children") || 0)
+            })}
+          />
         </div>
 
 
@@ -212,7 +267,17 @@ function SearchResultsPage() {
                 {storeCheckin && storeCheckout
                   ? `${formatDate(storeCheckin)} – ${formatDate(
                       storeCheckout
-                    )} · ${storeAdults} guest${storeAdults > 1 ? "s" : ""}`
+                    )} · ${
+                      roomsSummary.rooms ?? 1
+                    } room${(roomsSummary.rooms ?? 1) > 1 ? "s" : ""} · ${
+                      storeAdults
+                    } adult${storeAdults > 1 ? "s" : ""}${
+                      (roomsSummary.children ?? 0) > 0
+                        ? ` · ${roomsSummary.children} child${
+                            roomsSummary.children > 1 ? "ren" : ""
+                          }`
+                        : ""
+                    }`
                   : "Select dates to see the best available rates."}
               </p>
             </div>

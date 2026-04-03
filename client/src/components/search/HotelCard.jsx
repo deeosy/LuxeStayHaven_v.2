@@ -1,7 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import Badge from "../ui/Badge.jsx";
 import { formatCurrency } from "../../utils/formatters.js";
 import useSearchStore from "../../stores/useSearchStore.js";
 import FavoriteButton from "../ui/FavoriteButton.jsx";
@@ -19,8 +18,6 @@ function HotelCard({ rate, searchParams }) {
 
   const price = offer?.retailRate?.total?.[0]?.amount;
   const original = offer?.retailRate?.suggestedSellingPrice?.[0]?.amount;
-  const refundableTag = offer?.cancellationPolicies?.refundableTag;
-  const boardName = offer?.boardName;
   const stars = hotel.stars || hotel.starRating || hotel.rating || null;
   const reviews = hotel.reviewCount || hotel.reviewsCount || hotel.reviews || null;
 
@@ -76,12 +73,6 @@ function HotelCard({ rate, searchParams }) {
                 {reviews ? `${reviews} reviews` : "Premium stay"}
               </div>
             </div>
-            {refundableTag === "RFN" ? (
-              <Badge color="success">Refundable</Badge>
-            ) : (
-              <Badge color="error">Non-refundable</Badge>
-            )}
-            {boardName && <Badge color="info">{boardName}</Badge>}
           </div>
 
           <div className="mt-auto flex items-end justify-between">

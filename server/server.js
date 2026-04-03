@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const liteApi = require("liteapi-node-sdk");
 const cors = require("cors");
 const path = require("path");
+const https = require("https");
 require("dotenv").config();
 const morgan = require('morgan');
 
@@ -87,6 +88,51 @@ function sendLiteApiError(res, failure) {
   });
 }
 
+function httpGetJson(url, apiKey) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      { headers: { "X-Api-Key": apiKey } },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          const status = res.statusCode || 500;
+          if (status < 200 || status >= 300) {
+            return reject({ status, body });
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject({ status: 502, body });
+          }
+        });
+      }
+    );
+    req.on("error", (err) => reject({ status: 500, body: err.message }));
+    req.end();
+  });
+}
+
+function parseOccupanciesParam(value) {
+  if (!value) return null;
+  const raw = String(value);
+  try {
+    return JSON.parse(raw);
+  } catch {}
+  try {
+    const decoded = decodeURIComponent(raw);
+    return JSON.parse(decoded);
+  } catch {}
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8");
+    return JSON.parse(decoded);
+  } catch {}
+  return null;
+}
+
 app.use(bodyParser.json());
 
 // Health check endpoint for deployments/monitoring.
@@ -94,9 +140,78 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", environment: process.env.NODE_ENV });
 });
 
+app.get("/places", async (req, res) => {
+  const {
+    textQuery = "",
+    type,
+    language = "en",
+    ip,
+    environment
+  } = req.query;
+  const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
+  if (!apiKey || String(apiKey).trim() === "") {
+    const keyName = environment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
+    return res.status(401).json({
+      error: `Missing ${keyName} in .env. Copy your key from https://dashboard.liteapi.travel/`,
+    });
+  }
+  const q = String(textQuery || "").trim();
+  if (q.length < 3) {
+    return res.json({ data: [], message: "Type at least 3 characters" });
+  }
+
+  const requestedTypes = String(type || "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const typeList =
+    requestedTypes.length === 0
+      ? ["locality"]
+      : ["locality", ...requestedTypes.filter((t) => t !== "locality")];
+
+  try {
+    const url = new URL("https://api.liteapi.travel/v3.0/data/places");
+    url.searchParams.set("textQuery", q);
+    url.searchParams.set("type", typeList.join(","));
+    if (language) url.searchParams.set("language", language);
+    const forwardedFor = String(req.headers["x-forwarded-for"] || "")
+      .split(",")[0]
+      .trim();
+    const remote = String(req.socket?.remoteAddress || "").trim();
+    const inferredIpRaw = forwardedFor || remote;
+    const inferredIp = inferredIpRaw.startsWith("::ffff:")
+      ? inferredIpRaw.slice(7)
+      : inferredIpRaw;
+    const ipToUse = String(ip || inferredIp || "").trim();
+    if (ipToUse && ipToUse !== "::1" && ipToUse.includes(".")) {
+      url.searchParams.set("ip", ipToUse);
+    }
+    const json = await httpGetJson(url.toString(), apiKey);
+    const data = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+    return res.json({ data, message: "ok" });
+  } catch (err) {
+    const status = err?.status || 500;
+    return res.status(status).json({
+      error: status === 429 ? "Rate limited" : "Failed to load places",
+    });
+  }
+});
+
 app.get("/search-hotels", async (req, res) => {
   console.log("Search endpoint hit");
-  const { checkin, checkout, adults, city, countryCode, environment } = req.query;
+  const {
+    checkin,
+    checkout,
+    adults,
+    city,
+    countryCode,
+    placeId,
+    latitude,
+    longitude,
+    radius,
+    occupancies,
+    environment
+  } = req.query;
   const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
@@ -104,15 +219,6 @@ app.get("/search-hotels", async (req, res) => {
   const checkoutDate = checkout || new Date(today.getTime() + 1*24*60*60*1000).toISOString().split('T')[0]; // 1 day later  
 
   try {
-    if (!city) {
-      return res.status(400).json({ error: "city is required" });
-    }
-
-    if (!countryCode) {
-      return res.status(400).json({
-        error: "countryCode is required (e.g. FR for France, US for USA)"
-      });
-    }
 
     if (!apiKey || String(apiKey).trim() === "") {
       const keyName = environment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
@@ -121,26 +227,54 @@ app.get("/search-hotels", async (req, res) => {
       });
     }
 
-    const hotelsResponse = await sdk.getHotels(countryCode, city, 0, 10);
-    const hotelsFail = liteApiFailure(hotelsResponse);
-    if (hotelsFail) {
-      console.error("getHotels failed:", hotelsFail);
-      return sendLiteApiError(res, hotelsFail);
-    }
-
-    // Support both latest SDK (returns array) and older one (returns { data: [] })
-    const hotels = Array.isArray(hotelsResponse) ? hotelsResponse : hotelsResponse?.data;
-
-    if (!Array.isArray(hotels)) {
-      console.error("Unexpected getHotels response shape:", hotelsResponse);
-      return res.status(502).json({ error: "Unexpected response from hotel search API" });
+    let hotels = [];
+    if (placeId) {
+      const url = new URL("https://api.liteapi.travel/v3.0/data/hotels");
+      url.searchParams.set("placeId", String(placeId));
+      url.searchParams.set("limit", "50");
+      const data = await httpGetJson(url.toString(), apiKey);
+      hotels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+    } else if (latitude && longitude) {
+      const url = new URL("https://api.liteapi.travel/v3.0/data/hotels");
+      url.searchParams.set("latitude", String(latitude));
+      url.searchParams.set("longitude", String(longitude));
+      url.searchParams.set("radius", String(radius || 3000));
+      url.searchParams.set("limit", "50");
+      const data = await httpGetJson(url.toString(), apiKey);
+      hotels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+    } else {
+      if (!city) {
+        return res.status(400).json({ error: "city is required" });
+      }
+      if (!countryCode) {
+        return res.status(400).json({
+          error: "countryCode is required (e.g. FR for France, US for USA)"
+        });
+      }
+      const hotelsResponse = await sdk.getHotels(countryCode, city, 0, 10);
+      const hotelsFail = liteApiFailure(hotelsResponse);
+      if (hotelsFail) {
+        console.error("getHotels failed:", hotelsFail);
+        return sendLiteApiError(res, hotelsFail);
+      }
+      hotels = Array.isArray(hotelsResponse) ? hotelsResponse : hotelsResponse?.data;
+      if (!Array.isArray(hotels)) {
+        console.error("Unexpected getHotels response shape:", hotelsResponse);
+        return res.status(502).json({ error: "Unexpected response from hotel search API" });
+      }
     }
 
     const hotelIds = hotels.map((hotel) => hotel.id);
+    const parsedOccupancies = parseOccupanciesParam(occupancies);
+    const occupanciesArray = Array.isArray(parsedOccupancies)
+      ? parsedOccupancies
+          .map((o) => ({ adults: parseInt(o?.adults ?? 2, 10) || 2 }))
+          .slice(0, 6)
+      : [{ adults: parseInt(adults, 10) || 2 }];
 
     const fullRatesResponse = await sdk.getFullRates({
       hotelIds,
-      occupancies: [{ adults: parseInt(adults, 10) }],
+      occupancies: occupanciesArray,
       currency: "USD",
       guestNationality: "US",
       checkin: checkinDate,
@@ -494,8 +628,23 @@ app.get("/", (req, res) => {
 
 app.use(express.static(path.join(__dirname, "../client")));
 
-const port = process.env.PORT || 5000;
+const basePort = Number(process.env.PORT || 5000);
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+function startServer(port, attempt) {
+  const server = app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+
+  server.on("error", (err) => {
+    if (err?.code === "EADDRINUSE" && attempt < 10) {
+      const next = port + 1;
+      console.log(`Port ${port} is in use, trying ${next}...`);
+      startServer(next, attempt + 1);
+      return;
+    }
+    console.error("Server failed to start:", err);
+    process.exit(1);
+  });
+}
+
+startServer(basePort, 0);

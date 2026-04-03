@@ -1,6 +1,36 @@
-const BASE =
-  import.meta.env.VITE_API_BASE ||
-  (import.meta.env.DEV ? "http://localhost:5000" : window.location.origin);
+let cachedBase = null;
+
+async function resolveApiBase() {
+  if (cachedBase) return cachedBase;
+
+  const envBase = import.meta.env.VITE_API_BASE;
+  if (!import.meta.env.DEV) {
+    cachedBase = envBase || window.location.origin;
+    return cachedBase;
+  }
+
+  const candidates = [
+    envBase,
+    "http://localhost:5000",
+    "http://localhost:5001",
+    "http://localhost:5002"
+  ]
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i);
+
+  for (const base of candidates) {
+    try {
+      const r = await fetch(`${base}/health`, { method: "GET" });
+      if (r.ok) {
+        cachedBase = base;
+        return cachedBase;
+      }
+    } catch {}
+  }
+
+  cachedBase = candidates[0] || "http://localhost:5000";
+  return cachedBase;
+}
 
 function ensureCountryCode(city, countryCode) {
   if (countryCode && typeof countryCode === "string") return countryCode.toUpperCase();
@@ -37,18 +67,40 @@ export async function searchHotels({
   adults,
   city,
   countryCode,
+  placeId,
+  latitude,
+  longitude,
+  radius,
+  occupancies,
   environment
 }) {
   const cc = ensureCountryCode(city, countryCode);
-  const params = new URLSearchParams({
-    checkin,
-    checkout,
-    adults: String(adults),
-    city,
-    countryCode: cc,
-    environment
-  });
-  const res = await fetch(`${BASE}/search-hotels?${params.toString()}`);
+  const params = new URLSearchParams();
+  if (checkin) params.set("checkin", checkin);
+  if (checkout) params.set("checkout", checkout);
+  if (typeof adults !== "undefined" && adults !== null) {
+    params.set("adults", String(adults));
+  }
+  if (city) params.set("city", city);
+  if (cc) params.set("countryCode", cc);
+  if (placeId) params.set("placeId", String(placeId));
+  if (latitude) params.set("latitude", String(latitude));
+  if (longitude) params.set("longitude", String(longitude));
+  if (radius) params.set("radius", String(radius));
+  if (occupancies) params.set("occupancies", String(occupancies));
+  if (environment) params.set("environment", environment);
+  const base = await resolveApiBase();
+  const res = await fetch(`${base}/search-hotels?${params.toString()}`);
+  return handleResponse(res);
+}
+
+export async function placesAutocomplete({ textQuery, type, environment }) {
+  const params = new URLSearchParams();
+  if (textQuery) params.set("textQuery", textQuery);
+  if (type) params.set("type", type);
+  if (environment) params.set("environment", environment);
+  const base = await resolveApiBase();
+  const res = await fetch(`${base}/places?${params.toString()}`);
   return handleResponse(res);
 }
 
@@ -66,7 +118,8 @@ export async function searchRates({
     hotelId,
     environment
   });
-  const res = await fetch(`${BASE}/search-rates?${params.toString()}`);
+  const base = await resolveApiBase();
+  const res = await fetch(`${base}/search-rates?${params.toString()}`);
   return handleResponse(res);
 }
 
@@ -86,7 +139,8 @@ export async function prebook(data) {
     payload.offerId = data.rateId;
   }
 
-  const res = await fetch(`${BASE}/prebook`, {
+  const base = await resolveApiBase();
+  const res = await fetch(`${base}/prebook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -183,7 +237,8 @@ export async function prebookOffer({
   hotelId,
   environment
 }) {
-  const res = await fetch(`${BASE}/prebook`, {
+  const base = await resolveApiBase();
+  const res = await fetch(`${base}/prebook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -204,7 +259,8 @@ export async function bookReservation({
   environment,
   holder
 }) {
-  const res = await fetch(`${BASE}/book`, {
+  const base = await resolveApiBase();
+  const res = await fetch(`${base}/book`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prebookId, transactionId, environment, holder })
@@ -214,7 +270,8 @@ export async function bookReservation({
 
 export async function finalizeBooking(prebookId, transactionId, environment) {
   try {
-    const res = await fetch(`${BASE}/book`, {
+    const base = await resolveApiBase();
+    const res = await fetch(`${base}/book`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prebookId, transactionId, environment })
@@ -242,6 +299,7 @@ export async function completeBooking({
     guestEmail: email,
     environment
   });
-  const res = await fetch(`${BASE}/book?${params.toString()}`);
+  const base = await resolveApiBase();
+  const res = await fetch(`${base}/book?${params.toString()}`);
   return handleResponse(res);
 }
