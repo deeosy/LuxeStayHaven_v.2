@@ -133,6 +133,39 @@ function parseOccupanciesParam(value) {
   return null;
 }
 
+function parseBooleanParam(value) {
+  if (value == null) return null;
+  const s = String(value).trim().toLowerCase();
+  if (s === "") return null;
+  if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
+  if (s === "false" || s === "0" || s === "no" || s === "off") return false;
+  return null;
+}
+
+function parseCsvParam(value) {
+  if (value == null) return [];
+  const raw = Array.isArray(value) ? value.join(",") : String(value);
+  return raw
+    .split(",")
+    .map((x) => String(x).trim())
+    .filter(Boolean);
+}
+
+function parseStarRatingsParam(value) {
+  const parts = parseCsvParam(value);
+  const nums = parts
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n > 0 && n <= 5);
+  if (nums.length === 0) return [];
+  return Array.from(new Set(nums)).sort((a, b) => a - b);
+}
+
+function hotelStarsValue(hotel) {
+  const raw = hotel?.stars ?? hotel?.starRating ?? hotel?.rating ?? null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 app.use(bodyParser.json());
 
 // Health check endpoint for deployments/monitoring.
@@ -210,7 +243,10 @@ app.get("/search-hotels", async (req, res) => {
     longitude,
     radius,
     occupancies,
-    environment
+    environment,
+    starRating,
+    refundable,
+    boardType
   } = req.query;
   const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
@@ -264,7 +300,23 @@ app.get("/search-hotels", async (req, res) => {
       }
     }
 
+    const starRatings = parseStarRatingsParam(starRating);
+    const refundableOnly = parseBooleanParam(refundable);
+    const boardTypes = parseCsvParam(boardType).map((b) => b.toUpperCase());
+    const minStar = starRatings.length > 0 ? Math.min(...starRatings) : null;
+
+    if (minStar != null) {
+      hotels = hotels.filter((h) => {
+        const stars = hotelStarsValue(h);
+        if (stars == null) return false;
+        return stars >= minStar;
+      });
+    }
+
     const hotelIds = hotels.map((hotel) => hotel.id);
+    if (hotelIds.length === 0) {
+      return res.json({ rates: [] });
+    }
     const parsedOccupancies = parseOccupanciesParam(occupancies);
     const occupanciesArray = Array.isArray(parsedOccupancies)
       ? parsedOccupancies
@@ -272,14 +324,29 @@ app.get("/search-hotels", async (req, res) => {
           .slice(0, 6)
       : [{ adults: parseInt(adults, 10) || 2 }];
 
-    const fullRatesResponse = await sdk.getFullRates({
+    const ratesRequest = {
       hotelIds,
       occupancies: occupanciesArray,
       currency: "USD",
       guestNationality: "US",
       checkin: checkinDate,
       checkout: checkoutDate,
+    };
+
+    // Backend-supported filters (when LiteAPI supports them). We still apply a server-side
+    // fallback filter after the response to guarantee correct behavior even if the SDK
+    // ignores unknown fields.
+    if (starRatings.length > 0) ratesRequest.starRating = starRatings;
+    if (typeof refundableOnly === "boolean") ratesRequest.refundable = refundableOnly;
+    if (boardTypes.length > 0) ratesRequest.boardType = boardTypes;
+
+    console.log("Rates search filters:", {
+      starRating: starRatings.length > 0 ? starRatings : null,
+      refundable: typeof refundableOnly === "boolean" ? refundableOnly : null,
+      boardType: boardTypes.length > 0 ? boardTypes : null
     });
+
+    const fullRatesResponse = await sdk.getFullRates(ratesRequest);
 
     const ratesFail = liteApiFailure(fullRatesResponse);
     if (ratesFail) {
@@ -300,6 +367,33 @@ app.get("/search-hotels", async (req, res) => {
     rates.forEach((rate) => {
       rate.hotel = hotels.find((hotel) => hotel.id === rate.hotelId);
     });
+
+    if (boardTypes.length > 0 || refundableOnly === true) {
+      rates = rates
+        .map((rate) => {
+          const roomTypes = Array.isArray(rate?.roomTypes) ? rate.roomTypes : [];
+          const nextRoomTypes = roomTypes
+            .map((rt) => {
+              const offers = Array.isArray(rt?.rates) ? rt.rates : [];
+              const filteredOffers = offers.filter((o) => {
+                if (refundableOnly === true && o?.cancellationPolicies?.refundableTag !== "RFN") {
+                  return false;
+                }
+                if (boardTypes.length > 0) {
+                  const bt = String(o?.boardType || "").toUpperCase();
+                  if (!boardTypes.includes(bt)) return false;
+                }
+                return true;
+              });
+              if (filteredOffers.length === 0) return null;
+              return { ...rt, rates: filteredOffers };
+            })
+            .filter(Boolean);
+          if (nextRoomTypes.length === 0) return null;
+          return { ...rate, roomTypes: nextRoomTypes };
+        })
+        .filter(Boolean);
+    }
 
     res.json({ rates });
   } catch (error) {

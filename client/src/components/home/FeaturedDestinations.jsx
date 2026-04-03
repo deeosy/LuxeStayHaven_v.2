@@ -1,10 +1,10 @@
 import React from "react";
 import { motion } from "framer-motion";
-import useSearchStore from "../../stores/useSearchStore.js";
 import { useNavigate } from "react-router-dom";
 
 const destinations = [
   {
+    slug: "paris",
     city: "Paris",
     countryCode: "FR",
     price: 520,
@@ -12,6 +12,7 @@ const destinations = [
       "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1200&q=80"
   },
   {
+    slug: "new-york",
     city: "New York",
     countryCode: "US",
     price: 410,
@@ -19,6 +20,7 @@ const destinations = [
       "https://images.unsplash.com/photo-1499092346589-b9b6be3e94b2?auto=format&fit=crop&w=1200&q=80"
   },
   {
+    slug: "tokyo",
     city: "Tokyo",
     countryCode: "JP",
     price: 450,
@@ -26,6 +28,7 @@ const destinations = [
       "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=1200&q=80"
   },
   {
+    slug: "dubai",
     city: "Dubai",
     countryCode: "AE",
     price: 600,
@@ -33,6 +36,7 @@ const destinations = [
       "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1200&q=80"
   },
   {
+    slug: "rome",
     city: "Rome",
     countryCode: "IT",
     price: 430,
@@ -40,6 +44,7 @@ const destinations = [
       "https://images.unsplash.com/photo-1529154036614-a60975f5c760?auto=format&fit=crop&w=1200&q=80"
   },
   {
+    slug: "london",
     city: "London",
     countryCode: "GB",
     price: 480,
@@ -48,37 +53,11 @@ const destinations = [
   }
 ];
 
-function formatISO(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function FeaturedDestinations() {
-  const { checkin, checkout, adults, setDestination, setDates, setAdults } = useSearchStore();
   const navigate = useNavigate();
 
   const handleClick = (dest) => {
-    const base = new Date();
-    const tomorrow = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1);
-    const dayAfter = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 2);
-    const nextCheckin = checkin || formatISO(tomorrow);
-    const nextCheckout = checkout || formatISO(dayAfter);
-    const nextAdults = adults || 2;
-
-    setDestination({
-      placeId: null,
-      destinationName: `${dest.city}, ${dest.countryCode}`
-    });
-    setDates({ checkin: nextCheckin, checkout: nextCheckout });
-    setAdults(nextAdults);
-    // When a user clicks a featured destination, we include dates + guests so results load immediately.
-    navigate(
-      `/search?city=${encodeURIComponent(dest.city)}&countryCode=${dest.countryCode}&checkin=${encodeURIComponent(
-        nextCheckin
-      )}&checkout=${encodeURIComponent(nextCheckout)}&adults=${encodeURIComponent(String(nextAdults))}`
-    );
+    navigate(`/destinations/${encodeURIComponent(dest.slug)}`);
   };
 
   return (

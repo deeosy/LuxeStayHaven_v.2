@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import useSearchStore from "../stores/useSearchStore.js";
 import { searchHotels } from "../utils/api.js";
@@ -30,6 +30,25 @@ function getHotelStars(rate) {
   const raw = rate?.hotel?.stars ?? rate?.hotel?.starRating ?? rate?.hotel?.rating ?? 0;
   const n = typeof raw === "number" ? raw : Number(raw);
   return Number.isFinite(n) ? n : 0;
+}
+
+function parseBooleanParam(value) {
+  if (value == null) return null;
+  const s = String(value).trim().toLowerCase();
+  if (s === "") return null;
+  if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
+  if (s === "false" || s === "0" || s === "no" || s === "off") return false;
+  return null;
+}
+
+function parseStarMin(value) {
+  if (!value) return 0;
+  const parts = String(value)
+    .split(",")
+    .map((x) => Number(String(x).trim()))
+    .filter((n) => Number.isFinite(n) && n > 0 && n <= 5);
+  if (parts.length === 0) return 0;
+  return Math.min(...parts);
 }
 
 function useQuery() {
@@ -84,6 +103,7 @@ function buildInitialRooms({ occupanciesRaw, roomsCount, totalAdults, totalChild
 
 function SearchResultsPage() {
   const query = useQuery();
+  const navigate = useNavigate();
   const {
     destinationName,
     checkin: storeCheckin,
@@ -103,10 +123,19 @@ function SearchResultsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const location = useLocation();
   const [roomsSummary, setRoomsSummary] = useState({ rooms: null, children: null });
-  const [priceMin, setPriceMin] = useState("");
-  const [priceMax, setPriceMax] = useState("");
-  const [minStars, setMinStars] = useState(0);
-  const [refundableOnly, setRefundableOnly] = useState(false);
+  const appliedMinStars = useMemo(() => parseStarMin(query.get("starRating")), [query]);
+  const appliedRefundableOnly = useMemo(
+    () => parseBooleanParam(query.get("refundable")) === true,
+    [query]
+  );
+  const appliedBoardType = useMemo(() => String(query.get("boardType") || "").trim(), [query]);
+
+  const [draftPriceMin, setDraftPriceMin] = useState("");
+  const [draftPriceMax, setDraftPriceMax] = useState("");
+  const [appliedPriceMin, setAppliedPriceMin] = useState("");
+  const [appliedPriceMax, setAppliedPriceMax] = useState("");
+  const [draftMinStars, setDraftMinStars] = useState(0);
+  const [draftRefundableOnly, setDraftRefundableOnly] = useState(false);
   const [sortKey, setSortKey] = useState("recommended");
 
   const priceBounds = useMemo(() => {
@@ -124,70 +153,64 @@ function SearchResultsPage() {
 
   useEffect(() => {
     if (!priceBounds) {
-      setPriceMin("");
-      setPriceMax("");
+      setDraftPriceMin("");
+      setDraftPriceMax("");
+      setAppliedPriceMin("");
+      setAppliedPriceMax("");
       return;
     }
-    setPriceMin(String(Math.floor(priceBounds.min)));
-    setPriceMax(String(Math.ceil(priceBounds.max)));
+    const nextMin = String(Math.floor(priceBounds.min));
+    const nextMax = String(Math.ceil(priceBounds.max));
+    setDraftPriceMin((prev) => (prev === "" ? nextMin : prev));
+    setDraftPriceMax((prev) => (prev === "" ? nextMax : prev));
+    setAppliedPriceMin((prev) => (prev === "" ? nextMin : prev));
+    setAppliedPriceMax((prev) => (prev === "" ? nextMax : prev));
   }, [priceBounds?.min, priceBounds?.max]);
+
+  useEffect(() => {
+    setDraftMinStars(appliedMinStars);
+    setDraftRefundableOnly(appliedRefundableOnly);
+  }, [appliedMinStars, appliedRefundableOnly]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (refundableOnly) count += 1;
-    if (minStars > 0) count += 1;
+    if (appliedRefundableOnly) count += 1;
+    if (appliedMinStars > 0) count += 1;
+    if (appliedBoardType) count += 1;
     if (priceBounds) {
-      const minN = priceMin === "" ? priceBounds.min : Number(priceMin);
-      const maxN = priceMax === "" ? priceBounds.max : Number(priceMax);
+      const minN = appliedPriceMin === "" ? priceBounds.min : Number(appliedPriceMin);
+      const maxN = appliedPriceMax === "" ? priceBounds.max : Number(appliedPriceMax);
       const minChanged = Number.isFinite(minN) && minN > priceBounds.min;
       const maxChanged = Number.isFinite(maxN) && maxN < priceBounds.max;
       if (minChanged || maxChanged) count += 1;
     }
     return count;
-  }, [refundableOnly, minStars, priceMin, priceMax, priceBounds]);
+  }, [
+    appliedRefundableOnly,
+    appliedMinStars,
+    appliedBoardType,
+    appliedPriceMin,
+    appliedPriceMax,
+    priceBounds
+  ]);
 
   const filteredResults = useMemo(() => {
-    // Filter logic (client-side):
-    // 1) If "Refundable only" is enabled, we first remove non-refundable offers at the rate level.
-    // 2) We then compute the lowest nightly retailRate from the remaining offers and apply the price range.
-    // 3) Finally, we apply the minimum star rating filter on the hotel.
+    // Backend vs client-side:
+    // - Backend filters: stars (starRating), refundable, boardType.
+    // - Client-side filters: price range (fast and UI-only).
     const bounds = priceBounds;
-    const minN = priceMin === "" ? bounds?.min : Number(priceMin);
-    const maxN = priceMax === "" ? bounds?.max : Number(priceMax);
+    const minN = appliedPriceMin === "" ? bounds?.min : Number(appliedPriceMin);
+    const maxN = appliedPriceMax === "" ? bounds?.max : Number(appliedPriceMax);
     const hasPrice =
       bounds && Number.isFinite(minN) && Number.isFinite(maxN) && (minN > bounds.min || maxN < bounds.max);
 
-    function refundableOnlyRate(rate) {
-      if (!refundableOnly) return rate;
-      const roomTypes = Array.isArray(rate?.roomTypes) ? rate.roomTypes : [];
-      const nextRoomTypes = roomTypes
-        .map((rt) => {
-          const offers = Array.isArray(rt?.rates) ? rt.rates : [];
-          const filteredOffers = offers.filter(
-            (o) => o?.cancellationPolicies?.refundableTag === "RFN"
-          );
-          if (filteredOffers.length === 0) return null;
-          return { ...rt, rates: filteredOffers };
-        })
-        .filter(Boolean);
-      if (nextRoomTypes.length === 0) return null;
-      return { ...rate, roomTypes: nextRoomTypes };
-    }
-
-    return (searchResults || [])
-      .map((rate) => refundableOnlyRate(rate))
-      .filter(Boolean)
-      .filter((rate) => {
-        if (minStars <= 0) return true;
-        return getHotelStars(rate) >= minStars;
-      })
-      .filter((rate) => {
-        if (!hasPrice) return true;
-        const amount = getCheapestNightlyAmount(rate);
-        if (!Number.isFinite(amount)) return false;
-        return amount >= minN && amount <= maxN;
-      });
-  }, [searchResults, refundableOnly, minStars, priceMin, priceMax, priceBounds]);
+    return (searchResults || []).filter((rate) => {
+      if (!hasPrice) return true;
+      const amount = getCheapestNightlyAmount(rate);
+      if (!Number.isFinite(amount)) return false;
+      return amount >= minN && amount <= maxN;
+    });
+  }, [searchResults, appliedPriceMin, appliedPriceMax, priceBounds]);
 
   const sortedResults = useMemo(() => {
     // Sorting is applied after filtering so the UI stays predictable:
@@ -225,15 +248,43 @@ function SearchResultsPage() {
   }, [filteredResults, sortKey]);
 
   function clearAllFilters() {
-    setRefundableOnly(false);
-    setMinStars(0);
+    setDraftRefundableOnly(false);
+    setDraftMinStars(0);
     if (priceBounds) {
-      setPriceMin(String(Math.floor(priceBounds.min)));
-      setPriceMax(String(Math.ceil(priceBounds.max)));
+      const nextMin = String(Math.floor(priceBounds.min));
+      const nextMax = String(Math.ceil(priceBounds.max));
+      setDraftPriceMin(nextMin);
+      setDraftPriceMax(nextMax);
+      setAppliedPriceMin(nextMin);
+      setAppliedPriceMax(nextMax);
     } else {
-      setPriceMin("");
-      setPriceMax("");
+      setDraftPriceMin("");
+      setDraftPriceMax("");
+      setAppliedPriceMin("");
+      setAppliedPriceMax("");
     }
+
+    const next = new URLSearchParams(location.search || "");
+    next.delete("starRating");
+    next.delete("refundable");
+    next.delete("boardType");
+    navigate(`/search?${next.toString()}`);
+    setFiltersOpen(false);
+  }
+
+  function applyFilters() {
+    setAppliedPriceMin(draftPriceMin);
+    setAppliedPriceMax(draftPriceMax);
+
+    const next = new URLSearchParams(location.search || "");
+    if (draftMinStars > 0) next.set("starRating", String(draftMinStars));
+    else next.delete("starRating");
+    if (draftRefundableOnly) next.set("refundable", "true");
+    else next.delete("refundable");
+    if (appliedBoardType) next.set("boardType", appliedBoardType);
+    else next.delete("boardType");
+    navigate(`/search?${next.toString()}`);
+    setFiltersOpen(false);
   }
 
   function scrollToTop() {
@@ -304,6 +355,9 @@ function SearchResultsPage() {
     const checkin = query.get("checkin") || "";
     const checkout = query.get("checkout") || "";
     const adults = Number(query.get("adults") || 2);
+    const starRatingParam = query.get("starRating") || "";
+    const refundableParam = query.get("refundable");
+    const boardTypeParam = query.get("boardType") || "";
 
     if (!checkin || !checkout) return;
     if (!city && !placeId && !(latitude && longitude)) return;
@@ -334,6 +388,9 @@ function SearchResultsPage() {
       longitude: longitude || "",
       radius: radius || "",
       occupancies: occupancies || "",
+      starRating: starRatingParam || "",
+      refundable: refundableParam == null ? null : refundableParam,
+      boardType: boardTypeParam || "",
       environment
     })
       .then((data) => {
@@ -481,18 +538,18 @@ function SearchResultsPage() {
                     type="number"
                     label="Min"
                     placeholder={priceBounds ? String(Math.floor(priceBounds.min)) : "0"}
-                    value={priceMin}
+                    value={draftPriceMin}
                     min={0}
-                    onChange={(e) => setPriceMin(e.target.value)}
+                    onChange={(e) => setDraftPriceMin(e.target.value)}
                   />
                   <Input
                     id="maxPrice"
                     type="number"
                     label="Max"
                     placeholder={priceBounds ? String(Math.ceil(priceBounds.max)) : "2000"}
-                    value={priceMax}
+                    value={draftPriceMax}
                     min={0}
-                    onChange={(e) => setPriceMax(e.target.value)}
+                    onChange={(e) => setDraftPriceMax(e.target.value)}
                   />
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-textLight">
@@ -507,12 +564,12 @@ function SearchResultsPage() {
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {[3, 4, 5].map((n) => {
-                    const active = minStars === n;
+                    const active = draftMinStars === n;
                     return (
                       <button
                         key={n}
                         type="button"
-                        onClick={() => setMinStars((cur) => (cur === n ? 0 : n))}
+                        onClick={() => setDraftMinStars((cur) => (cur === n ? 0 : n))}
                         className={[
                           "rounded-full border px-3 py-2 text-xs transition",
                           active
@@ -534,12 +591,27 @@ function SearchResultsPage() {
                 <label className="flex items-center gap-2 text-xs text-textMedium">
                   <input
                     type="checkbox"
-                    checked={refundableOnly}
-                    onChange={(e) => setRefundableOnly(e.target.checked)}
+                    checked={draftRefundableOnly}
+                    onChange={(e) => setDraftRefundableOnly(e.target.checked)}
                     className="h-4 w-4 rounded border-slate-300"
                   />
                   Show refundable only
                 </label>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex gap-2">
+                <Button type="button" className="flex-1" onClick={applyFilters} disabled={loading}>
+                  Apply
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={clearAllFilters}
+                  disabled={loading}
+                >
+                  Clear
+                </Button>
               </div>
             </div>
           </aside>

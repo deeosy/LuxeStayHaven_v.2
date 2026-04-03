@@ -72,6 +72,9 @@ export async function searchHotels({
   longitude,
   radius,
   occupancies,
+  starRating,
+  refundable,
+  boardType,
   environment
 }) {
   const cc = ensureCountryCode(city, countryCode);
@@ -88,6 +91,11 @@ export async function searchHotels({
   if (longitude) params.set("longitude", String(longitude));
   if (radius) params.set("radius", String(radius));
   if (occupancies) params.set("occupancies", String(occupancies));
+  if (starRating) params.set("starRating", String(starRating));
+  if (typeof refundable !== "undefined" && refundable !== null) {
+    params.set("refundable", String(refundable));
+  }
+  if (boardType) params.set("boardType", String(boardType));
   if (environment) params.set("environment", environment);
   const base = await resolveApiBase();
   const res = await fetch(`${base}/search-hotels?${params.toString()}`);
