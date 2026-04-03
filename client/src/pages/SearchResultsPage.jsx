@@ -10,6 +10,28 @@ import Button from "../components/ui/Button.jsx";
 import Input from "../components/ui/Input.jsx";
 import { formatDate } from "../utils/formatters.js";
 
+function getCheapestNightlyAmount(rate) {
+  let lowest = null;
+  const roomTypes = Array.isArray(rate?.roomTypes) ? rate.roomTypes : [];
+  for (const rt of roomTypes) {
+    const offers = Array.isArray(rt?.rates) ? rt.rates : [];
+    for (const o of offers) {
+      const raw =
+        o?.retailRate?.total?.[0]?.amount ?? o?.retailRate?.amount ?? o?.retailRate?.totalAmount ?? null;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      if (!Number.isFinite(n)) continue;
+      lowest = lowest === null ? n : Math.min(lowest, n);
+    }
+  }
+  return lowest;
+}
+
+function getHotelStars(rate) {
+  const raw = rate?.hotel?.stars ?? rate?.hotel?.starRating ?? rate?.hotel?.rating ?? 0;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function useQuery() {
   const { search } = useLocation();
   return React.useMemo(() => new URLSearchParams(search), [search]);
@@ -85,26 +107,16 @@ function SearchResultsPage() {
   const [priceMax, setPriceMax] = useState("");
   const [minStars, setMinStars] = useState(0);
   const [refundableOnly, setRefundableOnly] = useState(false);
+  const [sortKey, setSortKey] = useState("recommended");
 
   const priceBounds = useMemo(() => {
     let min = null;
     let max = null;
     for (const r of searchResults || []) {
-      const roomTypes = Array.isArray(r?.roomTypes) ? r.roomTypes : [];
-      for (const rt of roomTypes) {
-        const offers = Array.isArray(rt?.rates) ? rt.rates : [];
-        for (const o of offers) {
-          const raw =
-            o?.retailRate?.total?.[0]?.amount ??
-            o?.retailRate?.amount ??
-            o?.retailRate?.totalAmount ??
-            null;
-          const n = typeof raw === "number" ? raw : Number(raw);
-          if (!Number.isFinite(n)) continue;
-          min = min === null ? n : Math.min(min, n);
-          max = max === null ? n : Math.max(max, n);
-        }
-      }
+      const n = getCheapestNightlyAmount(r);
+      if (!Number.isFinite(n)) continue;
+      min = min === null ? n : Math.min(min, n);
+      max = max === null ? n : Math.max(max, n);
     }
     if (min === null || max === null) return null;
     return { min, max };
@@ -145,25 +157,6 @@ function SearchResultsPage() {
     const hasPrice =
       bounds && Number.isFinite(minN) && Number.isFinite(maxN) && (minN > bounds.min || maxN < bounds.max);
 
-    function cheapestNightlyAmount(rate) {
-      let lowest = null;
-      const roomTypes = Array.isArray(rate?.roomTypes) ? rate.roomTypes : [];
-      for (const rt of roomTypes) {
-        const offers = Array.isArray(rt?.rates) ? rt.rates : [];
-        for (const o of offers) {
-          const raw =
-            o?.retailRate?.total?.[0]?.amount ??
-            o?.retailRate?.amount ??
-            o?.retailRate?.totalAmount ??
-            null;
-          const n = typeof raw === "number" ? raw : Number(raw);
-          if (!Number.isFinite(n)) continue;
-          lowest = lowest === null ? n : Math.min(lowest, n);
-        }
-      }
-      return lowest;
-    }
-
     function refundableOnlyRate(rate) {
       if (!refundableOnly) return rate;
       const roomTypes = Array.isArray(rate?.roomTypes) ? rate.roomTypes : [];
@@ -186,18 +179,50 @@ function SearchResultsPage() {
       .filter(Boolean)
       .filter((rate) => {
         if (minStars <= 0) return true;
-        const stars = Number(
-          rate?.hotel?.stars ?? rate?.hotel?.starRating ?? rate?.hotel?.rating ?? 0
-        );
-        return Number.isFinite(stars) && stars >= minStars;
+        return getHotelStars(rate) >= minStars;
       })
       .filter((rate) => {
         if (!hasPrice) return true;
-        const amount = cheapestNightlyAmount(rate);
+        const amount = getCheapestNightlyAmount(rate);
         if (!Number.isFinite(amount)) return false;
         return amount >= minN && amount <= maxN;
       });
   }, [searchResults, refundableOnly, minStars, priceMin, priceMax, priceBounds]);
+
+  const sortedResults = useMemo(() => {
+    // Sorting is applied after filtering so the UI stays predictable:
+    // - Recommended keeps the API order
+    // - Price sorts by the best available nightly retailRate (cheapest offer)
+    // - Stars sorts by hotel star rating (descending)
+    const list = [...filteredResults];
+    if (sortKey === "price_asc") {
+      list.sort((a, b) => {
+        const ap = getCheapestNightlyAmount(a);
+        const bp = getCheapestNightlyAmount(b);
+        if (!Number.isFinite(ap) && !Number.isFinite(bp)) return 0;
+        if (!Number.isFinite(ap)) return 1;
+        if (!Number.isFinite(bp)) return -1;
+        return ap - bp;
+      });
+      return list;
+    }
+    if (sortKey === "price_desc") {
+      list.sort((a, b) => {
+        const ap = getCheapestNightlyAmount(a);
+        const bp = getCheapestNightlyAmount(b);
+        if (!Number.isFinite(ap) && !Number.isFinite(bp)) return 0;
+        if (!Number.isFinite(ap)) return 1;
+        if (!Number.isFinite(bp)) return -1;
+        return bp - ap;
+      });
+      return list;
+    }
+    if (sortKey === "stars") {
+      list.sort((a, b) => getHotelStars(b) - getHotelStars(a));
+      return list;
+    }
+    return list;
+  }, [filteredResults, sortKey]);
 
   function clearAllFilters() {
     setRefundableOnly(false);
@@ -209,6 +234,11 @@ function SearchResultsPage() {
       setPriceMin("");
       setPriceMax("");
     }
+  }
+
+  function scrollToTop() {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   useEffect(() => {
@@ -423,10 +453,21 @@ function SearchResultsPage() {
                     </span>
                   )}
                 </div>
-                <div className="lg:hidden">
-                  <Button type="button" variant="ghost" onClick={() => setFiltersOpen(false)}>
-                    Close
-                  </Button>
+                <div className="flex items-center gap-3">
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="text-xs font-medium text-accent hover:text-accentAlt"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                  <div className="lg:hidden">
+                    <Button type="button" variant="ghost" onClick={() => setFiltersOpen(false)}>
+                      Close
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -500,12 +541,6 @@ function SearchResultsPage() {
                   Show refundable only
                 </label>
               </div>
-
-              <div className="pt-2 border-t border-slate-100">
-                <Button type="button" variant="secondary" className="w-full" onClick={clearAllFilters}>
-                  Clear all filters
-                </Button>
-              </div>
             </div>
           </aside>
 
@@ -516,7 +551,7 @@ function SearchResultsPage() {
                   {loading
                     ? "Searching…"
                     : activeFilterCount > 0
-                    ? `${filteredResults.length} of ${searchResults.length} hotels`
+                    ? `${sortedResults.length} of ${searchResults.length} hotels`
                     : `${searchResults.length} hotel${searchResults.length === 1 ? "" : "s"} found`}
                 </div>
                 <div className="lg:hidden">
@@ -527,11 +562,15 @@ function SearchResultsPage() {
               </div>
               <div className="flex items-center gap-2 text-xs text-textMedium">
                 <span className="text-textLight">Sort</span>
-                <select className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs">
-                  <option>Recommended</option>
-                  <option>Price: Low to High</option>
-                  <option>Price: High to Low</option>
-                  <option>Stars</option>
+                <select
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs"
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value)}
+                >
+                  <option value="recommended">Recommended</option>
+                  <option value="price_asc">Price: Low to High</option>
+                  <option value="price_desc">Price: High to Low</option>
+                  <option value="stars">Stars</option>
                 </select>
               </div>
             </div>
@@ -552,13 +591,17 @@ function SearchResultsPage() {
 
             {!loading && !error && searchResults.length === 0 && (
               <div className="rounded-2xl bg-white shadow-soft border border-slate-100 p-8 text-center space-y-3">
-                <div className="text-3xl">🌍</div>
                 <div className="font-heading text-lg text-primary">
                   No hotels found
                 </div>
                 <p className="text-sm text-textMedium max-w-md mx-auto">
                   Try adjusting your dates, choosing a nearby destination, or searching with fewer filters.
                 </p>
+                <div className="flex justify-center">
+                  <Button type="button" variant="secondary" onClick={scrollToTop}>
+                    Modify search
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -566,19 +609,22 @@ function SearchResultsPage() {
               <div className="rounded-2xl bg-white shadow-soft border border-slate-100 p-8 text-center space-y-3">
                 <div className="font-heading text-lg text-primary">No matches</div>
                 <p className="text-sm text-textMedium max-w-md mx-auto">
-                  Try widening your price range, lowering the star minimum, or clearing filters.
+                  Try widening your price range, lowering the star minimum, or modifying your search.
                 </p>
-                <div className="flex justify-center">
+                <div className="flex flex-col sm:flex-row justify-center gap-2">
                   <Button type="button" variant="secondary" onClick={clearAllFilters}>
                     Clear all filters
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={scrollToTop}>
+                    Modify search
                   </Button>
                 </div>
               </div>
             )}
 
-            {!loading && !error && filteredResults.length > 0 && (
+            {!loading && !error && sortedResults.length > 0 && (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredResults.map((rate) => (
+                {sortedResults.map((rate) => (
                   <HotelCard
                     key={rate.hotelId}
                     rate={rate}

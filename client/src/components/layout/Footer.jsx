@@ -52,9 +52,18 @@ function Footer() {
           </p>
         </div>
       </div>
+      <div className="pb-6 text-center">
+        <a
+          href="https://liteapi.travel"
+          target="_blank"
+          rel="noreferrer"
+          className="text-[11px] text-textLight hover:text-primary"
+        >
+          Powered by LiteAPI
+        </a>
+      </div>
     </footer>
   );
 }
 
 export default Footer;
-

@@ -85,22 +85,20 @@ function HotelCard({ rate, searchParams }) {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
-            <div className="flex items-center gap-2 text-textMedium">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs">
               <div className="text-accent font-semibold">
-                {stars ? `${stars}★` : "★"}
+                {stars ? `${Number(stars).toFixed(Number(stars) % 1 ? 1 : 0)}★` : "—"}
               </div>
               <div className="text-textLight">
-                {reviews ? `${reviews} reviews` : "Premium stay"}
+                {reviews ? `${reviews} review${Number(reviews) === 1 ? "" : "s"}` : "Premium stay"}
               </div>
             </div>
           </div>
 
           <div className="mt-auto flex items-end justify-between">
             <div className="text-xs text-textMedium">
-              <div className="text-[11px] uppercase tracking-wide text-textLight">
-                Starting from
-              </div>
+              <div className="text-[11px] uppercase tracking-wide text-textLight">From</div>
               <div className="flex items-baseline gap-1">
                 <span className="text-lg font-semibold text-primary">
                   {formatCurrency(price)}

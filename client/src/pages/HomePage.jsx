@@ -6,7 +6,7 @@ import WhyLuxeStay from "../components/home/WhyLuxeStay.jsx";
 
 function HomePage() {
   return (
-    <div>
+    <div className="bg-background">
       <Helmet>
         <title>LuxeStayHaven | Luxury Hotel Booking</title>
         <meta

@@ -15,7 +15,7 @@ function Hero() {
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/15 to-black/25" />
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-24 flex flex-col gap-10 md:gap-20 ">
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-24 flex flex-col gap-10 md:gap-16">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -32,6 +32,9 @@ function Hero() {
             Discover extraordinary stays around the world. Handpicked five-star
             hotels, bespoke experiences, and seamless booking in a single
             elegant journey.
+          </p>
+          <p className="mt-4 text-center text-xs text-slate-100/80 tracking-wide">
+            Curated stays · Transparent rates · Seamless booking
           </p>
         </motion.div>
 

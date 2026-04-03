@@ -16,7 +16,7 @@ const destinations = [
     countryCode: "US",
     price: 410,
     image:
-      "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=1200&q=80"
+      "https://images.unsplash.com/photo-1499092346589-b9b6be3e94b2?auto=format&fit=crop&w=1200&q=80"
   },
   {
     city: "Tokyo",
@@ -30,7 +30,14 @@ const destinations = [
     countryCode: "AE",
     price: 600,
     image:
-      "https://images.unsplash.com/photo-1504274066651-8d31a536b11a?auto=format&fit=crop&w=1200&q=80"
+      "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1200&q=80"
+  },
+  {
+    city: "Rome",
+    countryCode: "IT",
+    price: 430,
+    image:
+      "https://images.unsplash.com/photo-1529154036614-a60975f5c760?auto=format&fit=crop&w=1200&q=80"
   },
   {
     city: "London",
@@ -38,30 +45,26 @@ const destinations = [
     price: 480,
     image:
       "https://images.unsplash.com/photo-1528909514045-2fa4ac7a08ba?auto=format&fit=crop&w=1200&q=80"
-  },
-  {
-    city: "Bali",
-    countryCode: "ID",
-    price: 360,
-    image:
-      "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=80"
   }
 ];
 
+function formatISO(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function FeaturedDestinations() {
-  const { checkin, checkout, adults, setDestination, setDates, setAdults } =
-    useSearchStore();
+  const { checkin, checkout, adults, setDestination, setDates, setAdults } = useSearchStore();
   const navigate = useNavigate();
 
   const handleClick = (dest) => {
-    const today = new Date();
-    const defaultCheckin = today.toISOString().slice(0, 10);
-    const defaultCheckout = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
-
-    const nextCheckin = checkin || defaultCheckin;
-    const nextCheckout = checkout || defaultCheckout;
+    const base = new Date();
+    const tomorrow = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1);
+    const dayAfter = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 2);
+    const nextCheckin = checkin || formatISO(tomorrow);
+    const nextCheckout = checkout || formatISO(dayAfter);
     const nextAdults = adults || 2;
 
     setDestination({
@@ -70,14 +73,11 @@ function FeaturedDestinations() {
     });
     setDates({ checkin: nextCheckin, checkout: nextCheckout });
     setAdults(nextAdults);
+    // When a user clicks a featured destination, we include dates + guests so results load immediately.
     navigate(
-      `/search?city=${encodeURIComponent(
-        dest.city
-      )}&countryCode=${dest.countryCode}&checkin=${encodeURIComponent(
+      `/search?city=${encodeURIComponent(dest.city)}&countryCode=${dest.countryCode}&checkin=${encodeURIComponent(
         nextCheckin
-      )}&checkout=${encodeURIComponent(nextCheckout)}&adults=${encodeURIComponent(
-        String(nextAdults)
-      )}`
+      )}&checkout=${encodeURIComponent(nextCheckout)}&adults=${encodeURIComponent(String(nextAdults))}`
     );
   };
 
@@ -108,15 +108,19 @@ function FeaturedDestinations() {
           }}
         >
           {destinations.map((dest) => (
-            <motion.button
+            <motion.div
               key={dest.city}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => handleClick(dest)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") handleClick(dest);
+              }}
               variants={{
                 hidden: { opacity: 0, y: 16 },
                 visible: { opacity: 1, y: 0 }
               }}
-              className="group text-left rounded-2xl overflow-hidden bg-white shadow-soft hover:-translate-y-1 hover:shadow-xl transition transform focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
+              className="group text-left rounded-2xl overflow-hidden bg-white shadow-soft hover:-translate-y-1 hover:shadow-xl transition transform focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 cursor-pointer"
             >
               <div className="relative aspect-[4/3] overflow-hidden">
                 <img
@@ -125,7 +129,7 @@ function FeaturedDestinations() {
                   className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-4 flex items-end justify-between">
+                <div className="absolute inset-x-0 bottom-0 p-4 flex items-end justify-between gap-4">
                   <div>
                     <div className="text-white font-heading text-lg">
                       {dest.city}
@@ -134,21 +138,30 @@ function FeaturedDestinations() {
                       Luxury stays & curated experiences
                     </div>
                   </div>
-                  <div className="text-right text-sm text-white">
-                    <div className="text-xs uppercase tracking-wide text-slate-200">
-                      Starting from
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="text-right text-sm text-white">
+                      <div className="text-xs uppercase tracking-wide text-slate-200">
+                        Starting from
+                      </div>
+                      <div className="font-semibold">
+                        ${dest.price}
+                        <span className="text-xs font-normal text-slate-200"> / night</span>
+                      </div>
                     </div>
-                    <div className="font-semibold">
-                      ${dest.price}
-                      <span className="text-xs font-normal text-slate-200">
-                        {" "}
-                        / night
-                      </span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleClick(dest);
+                      }}
+                      className="inline-flex items-center justify-center rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white backdrop-blur hover:bg-white/15 border border-white/15"
+                    >
+                      Explore hotels
+                    </button>
                   </div>
                 </div>
               </div>
-            </motion.button>
+            </motion.div>
           ))}
         </motion.div>
       </div>
