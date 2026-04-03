@@ -19,15 +19,21 @@
 2. Copy `client/.env.example` to `client/.env` and set:
    - `VITE_GA4_ID=G-XXXXXXXXXX`
 3. Start the app and verify events in GA4:
-   - GA4 → Admin → DebugView (use the Google Analytics Debugger extension or append `?debug_mode=true` in GA4 config if needed)
-   - Events tracked: page_view, search_performed, hotel_viewed, booking_started, booking_complete
+   - Install the Google Analytics Debugger Chrome extension and enable it
+   - Open GA4 → Admin → DebugView
+   - Navigate the site (Home → Search → Hotel → Checkout → Confirmation)
+   - Look for these events: page_view, search_performed, hotel_viewed, booking_started, booking_complete
+4. Verify conversion payload (booking_complete):
+   - In DebugView, click the `booking_complete` event
+   - Confirm parameters include: event_category=ecommerce, event_label=<bookingId>, value, currency=USD, and items[0].item_name=<hotel name>
 
 ## Sitemap / robots.txt
 
 - `robots.txt` is served from `client/public/robots.txt`
 - `sitemap.xml` is served dynamically at `/sitemap.xml`
 - Submit sitemap in Google Search Console:
-  - Indexing → Sitemaps → Add: `https://YOUR_DOMAIN/sitemap.xml`
+  - Verify `https://YOUR_DOMAIN/sitemap.xml` loads in the browser
+  - Search Console → Indexing → Sitemaps → Add: `https://YOUR_DOMAIN/sitemap.xml`
 
 ---
 

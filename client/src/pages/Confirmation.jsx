@@ -202,13 +202,28 @@ function Confirmation() {
     if (loading || error || !bookingPayload) return;
     const revenue =
       details.amount != null && Number.isFinite(Number(details.amount)) ? Number(details.amount) : null;
-    const currency = (details.currency || "USD").toUpperCase();
+    const currency = "USD";
+    const hotelId =
+      details.bookingData?.hotel?.id ||
+      details.bookingData?.hotelId ||
+      details.bookingData?.hotel?.hotelId ||
+      "";
     trackOnce(`booking_complete:${details.bookingId || prebookId}`, "booking_complete", {
+      event_category: "ecommerce",
+      event_label: details.bookingId || prebookId || undefined,
       booking_id: details.bookingId || prebookId || undefined,
       hotel_name: details.hotelName || undefined,
       currency,
       revenue: revenue == null ? undefined : revenue,
-      value: revenue == null ? undefined : revenue
+      value: revenue == null ? undefined : revenue,
+      items: [
+        {
+          item_id: hotelId || undefined,
+          item_name: details.hotelName || "Hotel",
+          price: revenue == null ? undefined : revenue,
+          quantity: 1
+        }
+      ]
     });
   }, [bookingPayload, details.amount, details.bookingId, details.currency, details.hotelName, error, loading, prebookId]);
 

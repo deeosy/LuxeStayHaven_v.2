@@ -144,6 +144,8 @@ function HotelDetailsPage() {
     }
 
     trackEvent("booking_started", {
+      event_category: "ecommerce",
+      event_label: selectedRoom.offerId,
       hotel_id: hotelId,
       hotel_name: (hotelInfo?.hotelName || hotelInfo?.name || "") || undefined,
       offer_id: selectedRoom.offerId,
@@ -154,7 +156,18 @@ function HotelDetailsPage() {
       value:
         selectedRoom?.retailRate != null && Number.isFinite(Number(selectedRoom.retailRate))
           ? Number(selectedRoom.retailRate)
-          : undefined
+          : undefined,
+      items: [
+        {
+          item_id: hotelId,
+          item_name: (hotelInfo?.hotelName || hotelInfo?.name || "Hotel"),
+          price:
+            selectedRoom?.retailRate != null && Number.isFinite(Number(selectedRoom.retailRate))
+              ? Number(selectedRoom.retailRate)
+              : undefined,
+          quantity: 1
+        }
+      ]
     });
 
     resetCheckout();

@@ -718,26 +718,37 @@ app.post("/book", handleBook);
 app.get("/sitemap.xml", (req, res) => {
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
   const proto = forwardedProto || req.protocol || "https";
-  const host = req.headers.host || "example.com";
+  const host = req.get("host") || "example.com";
   const origin = `${proto}://${host}`;
 
-  const urls = [
-    `${origin}/`,
-    `${origin}/destinations/paris`,
-    `${origin}/destinations/new-york`,
-    `${origin}/destinations/tokyo`,
-    `${origin}/destinations/dubai`,
-    `${origin}/destinations/rome`,
-    `${origin}/destinations/bali`,
-    `${origin}/destinations/london`
+  const now = new Date();
+  const lastmod = now.toISOString();
+
+  const entries = [
+    { loc: `${origin}/`, changefreq: "weekly" },
+    { loc: `${origin}/search`, changefreq: "daily" },
+    { loc: `${origin}/destinations/paris`, changefreq: "weekly" },
+    { loc: `${origin}/destinations/dubai`, changefreq: "weekly" },
+    { loc: `${origin}/destinations/new-york`, changefreq: "weekly" },
+    { loc: `${origin}/destinations/rome`, changefreq: "weekly" },
+    { loc: `${origin}/destinations/bali`, changefreq: "weekly" },
+    { loc: `${origin}/destinations/tokyo`, changefreq: "weekly" },
+    { loc: `${origin}/destinations/london`, changefreq: "weekly" }
   ];
 
-  const lastmod = new Date().toISOString();
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n` +
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    urls
-      .map((loc) => {
-        return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${lastmod}</lastmod>\n  </url>`;
+    `  <!-- Hotel detail pages are highly dynamic. Expand this sitemap with popular /hotel/:id URLs when you have a stable list. -->\n` +
+    entries
+      .map(({ loc, changefreq }) => {
+        return (
+          `  <url>\n` +
+          `    <loc>${loc}</loc>\n` +
+          `    <lastmod>${lastmod}</lastmod>\n` +
+          `    <changefreq>${changefreq}</changefreq>\n` +
+          `  </url>`
+        );
       })
       .join("\n") +
     `\n</urlset>\n`;
