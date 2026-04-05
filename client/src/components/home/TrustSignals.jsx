@@ -1,0 +1,169 @@
+import React from "react";
+
+function StarRow() {
+  return (
+    <div className="flex items-center gap-0.5 text-[12px] text-accent">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <span key={i}>★</span>
+      ))}
+    </div>
+  );
+}
+
+function TrustSignals() {
+  const testimonials = [
+    {
+      name: "Amelia R.",
+      location: "London, UK",
+      quote:
+        "Beautifully curated stays. The experience felt premium from search to checkout, and the refundable options were crystal clear."
+    },
+    {
+      name: "David K.",
+      location: "New York, US",
+      quote:
+        "Prices were transparent and the booking was seamless. We found a great deal and confirmed in minutes."
+    },
+    {
+      name: "Sofia M.",
+      location: "Paris, FR",
+      quote:
+        "The interface is elegant and calm. I loved how quickly I could compare luxury hotels without feeling overwhelmed."
+    },
+    {
+      name: "Omar H.",
+      location: "Dubai, AE",
+      quote:
+        "Fast, reliable, and easy to trust. The hotel details were clear and the checkout felt secure."
+    },
+    {
+      name: "Keiko T.",
+      location: "Tokyo, JP",
+      quote:
+        "Great selection and a smooth flow. The experience feels refined — exactly what I want when booking premium stays."
+    }
+  ];
+
+  const badges = [
+    {
+      title: "Secure checkout",
+      subtitle: "Powered by LiteAPI",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 4v6c0 5-3 8-7 8s-7-3-7-8V7l7-4z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.5 12.3l1.8 1.8 3.8-4" />
+        </svg>
+      )
+    },
+    {
+      title: "Best price",
+      subtitle: "Transparent rates",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M20 12l-8 8-8-8 8-8 8 8z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v8M8 12h8" />
+        </svg>
+      )
+    },
+    {
+      title: "24/7 support",
+      subtitle: "Help when you need it",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 0116 0v4a2 2 0 01-2 2h-1" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 12v4a2 2 0 002 2h1" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 20h8" />
+        </svg>
+      )
+    },
+    {
+      title: "Free cancellation",
+      subtitle: "On most bookings",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-9-9" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 3v6h-6" />
+        </svg>
+      )
+    }
+  ];
+
+  return (
+    <section className="bg-background py-12 sm:py-16">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="rounded-3xl bg-white/70 backdrop-blur border border-slate-100 shadow-soft p-6 sm:p-10">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+            <div className="max-w-2xl">
+              <p className="text-xs uppercase tracking-[0.24em] text-textLight">
+                Trust & assurance
+              </p>
+              <h2 className="mt-2 font-heading text-2xl sm:text-3xl text-primary">
+                Trusted by thousands of travelers
+              </h2>
+              <p className="mt-2 text-sm text-textMedium">
+                A minimalist booking experience built for confidence — premium stays, transparent rates, and secure checkout.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full lg:max-w-[540px]">
+              {badges.map((b) => (
+                <div
+                  key={b.title}
+                  className="rounded-2xl bg-background border border-slate-100 px-4 py-3"
+                >
+                  <div className="text-accent">{b.icon}</div>
+                  <div className="mt-2 text-sm font-medium text-textDark">
+                    {b.title}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-textLight">
+                    {b.subtitle}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {testimonials.slice(0, 3).map((t) => (
+              <div
+                key={t.name}
+                className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5"
+              >
+                <StarRow />
+                <p className="mt-3 text-sm text-textMedium leading-relaxed">
+                  “{t.quote}”
+                </p>
+                <div className="mt-4 flex items-center justify-between text-xs">
+                  <div className="font-medium text-textDark">{t.name}</div>
+                  <div className="text-textLight">{t.location}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {testimonials.slice(3).map((t) => (
+              <div
+                key={t.name}
+                className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5"
+              >
+                <StarRow />
+                <p className="mt-3 text-sm text-textMedium leading-relaxed">
+                  “{t.quote}”
+                </p>
+                <div className="mt-4 flex items-center justify-between text-xs">
+                  <div className="font-medium text-textDark">{t.name}</div>
+                  <div className="text-textLight">{t.location}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default TrustSignals;
+

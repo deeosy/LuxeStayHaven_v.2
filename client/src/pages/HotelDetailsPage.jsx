@@ -1,22 +1,47 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Helmet } from "react-helmet-async";
 import { searchRates } from "../utils/api.js";
 import useSearchStore from "../stores/useSearchStore.js";
 import useBookingStore from "../stores/useBookingStore.js";
 import ImageGallery from "../components/hotel/ImageGallery.jsx";
-import HotelInfo from "../components/hotel/HotelInfo.jsx";
-import RoomList from "../components/hotel/RoomList.jsx";
+import RoomCard from "../components/hotel/RoomCard.jsx";
 import Input from "../components/ui/Input.jsx";
 import Button from "../components/ui/Button.jsx";
 import Badge from "../components/ui/Badge.jsx";
-import { formatCurrency, formatDate } from "../utils/formatters.js";
+import { formatCurrency } from "../utils/formatters.js";
 import { trackOnce, trackEvent } from "../utils/analytics.js";
 
 function useQuery() {
   const { search } = useLocation();
   return React.useMemo(() => new URLSearchParams(search), [search]);
+}
+
+function startOfDayISO(value) {
+  const raw = String(value || "").trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function nightsBetween(checkin, checkout) {
+  const ci = startOfDayISO(checkin);
+  const co = startOfDayISO(checkout);
+  if (!ci || !co) return 0;
+  const ms = co.getTime() - ci.getTime();
+  const nights = Math.round(ms / (1000 * 60 * 60 * 24));
+  return nights > 0 ? nights : 0;
+}
+
+function stripHtml(value) {
+  const raw = String(value || "");
+  const withBreaks = raw.replace(/<\s*br\s*\/?>/gi, "\n");
+  const noTags = withBreaks.replace(/<[^>]*>/g, " ");
+  return noTags.replace(/\s+/g, " ").trim();
 }
 
 
@@ -33,16 +58,14 @@ function HotelDetailsPage() {
   const [rateInfo, setRateInfo] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Sidebar selection state (select a room first, then continue to checkout).
   const [selectedRoom, setSelectedRoom] = useState(null);
-  // Sidebar search controls (dates/guests) to refresh hotel rates in-place.
-  const [modifyOpen, setModifyOpen] = useState(false);
   const [localSearch, setLocalSearch] = useState({
     checkin: "",
     checkout: "",
     adults: 2
   });
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState("rooms");
 
   const resolvedCheckin = useMemo(
     () => query.get("checkin") || checkin || "",
@@ -125,6 +148,38 @@ function HotelDetailsPage() {
     });
   }, [error, hotelId, hotelInfo, loading, resolvedAdults, resolvedCheckin, resolvedCheckout]);
 
+  const flattenedOffers = useMemo(() => {
+    const flat = (rateInfo || []).flat();
+    return Array.isArray(flat) ? flat : [];
+  }, [rateInfo]);
+
+  const bestOfferId = useMemo(() => {
+    const list = flattenedOffers;
+    if (list.length === 0) return "";
+    const refundable = list.filter((o) => o?.refundableTag === "RFN");
+    const pickFrom = refundable.length > 0 ? refundable : list;
+    const best = pickFrom.reduce((acc, cur) => {
+      const n = Number(cur?.retailRate);
+      if (!Number.isFinite(n)) return acc;
+      if (!acc) return cur;
+      const a = Number(acc?.retailRate);
+      if (!Number.isFinite(a)) return cur;
+      return n < a ? cur : acc;
+    }, null);
+    return best?.offerId || "";
+  }, [flattenedOffers]);
+
+  const minPerNight = useMemo(() => {
+    const nights = nightsBetween(resolvedCheckin, resolvedCheckout) || 1;
+    const minTotal = flattenedOffers.reduce((acc, o) => {
+      const n = Number(o?.retailRate);
+      if (!Number.isFinite(n)) return acc;
+      return acc == null ? n : Math.min(acc, n);
+    }, null);
+    if (minTotal == null) return null;
+    return minTotal / nights;
+  }, [flattenedOffers, resolvedCheckin, resolvedCheckout]);
+
   const handleSelectRoom = (offer) => {
     const offerId = offer?.offerId;
     if (!offerId) {
@@ -186,7 +241,7 @@ function HotelDetailsPage() {
     );
   };
 
-  const handleApplySearch = async () => {
+  const handleUpdateRates = async () => {
     if (!localSearch.checkin || !localSearch.checkout) return;
 
     setDates({ checkin: localSearch.checkin, checkout: localSearch.checkout });
@@ -207,7 +262,6 @@ function HotelDetailsPage() {
       nextAdults: Number(localSearch.adults) || 2,
       showSpinner: true
     });
-    setModifyOpen(false);
   };
 
   const seo = useMemo(() => {
@@ -297,7 +351,7 @@ function HotelDetailsPage() {
   }, [hotelId, hotelInfo, rateInfo, resolvedCheckin, resolvedCheckout]);
 
   return (
-    <section className="bg-background py-8 sm:py-10">
+    <section className="bg-background pb-10 sm:pb-14">
       <Helmet>
         <title>{seo.title}</title>
         <link rel="canonical" href={seo.canonical} />
@@ -318,128 +372,208 @@ function HotelDetailsPage() {
           {JSON.stringify(seo.breadcrumbSchema)}
         </script>
       </Helmet>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {loading && (
-          <div className="text-sm text-textMedium">Loading hotel details…</div>
-        )}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8">
+        <div className="flex items-center justify-between text-xs text-textLight mb-4">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 hover:text-primary"
+          >
+            <span>‹</span>
+            Back
+          </button>
+        </div>
+
+        {loading && <div className="text-sm text-textMedium">Loading hotel details…</div>}
         {!loading && error && (
           <div className="rounded-xl bg-white border border-error/20 p-4 text-sm text-error">
             {error}
           </div>
         )}
-        {!loading && !error && hotelInfo && (
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
-            <div className="space-y-6 min-w-0">
-              <ImageGallery hotelInfo={hotelInfo} />
-              <HotelInfo hotelInfo={hotelInfo} />
-              <RoomList
-                rateInfo={rateInfo}
-                onSelectOffer={handleSelectRoom}
-                selectedOfferId={selectedRoom?.offerId}
-              />
-            </div>
 
-            <div className="lg:sticky lg:top-20 h-fit">
-              <aside className="rounded-2xl bg-white border border-slate-100 shadow-soft p-4 sm:p-5 space-y-4 text-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.18em] text-textLight">
-                      Your search
+        {!loading && !error && hotelInfo && (
+          <div className="space-y-8">
+            <ImageGallery hotelInfo={hotelInfo} />
+
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+              <div className="min-w-0 order-2 lg:order-1">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-xs text-textLight">
+                      <span className="text-accent">{Number(hotelInfo?.starRating || hotelInfo?.stars || 0) || 0} ★</span>
+                      <span>—</span>
+                      <span>
+                        Loved by{" "}
+                        {Number(hotelInfo?.reviewCount || hotelInfo?.reviewsCount || hotelInfo?.reviews || 117) || 117}
+                        + travelers
+                      </span>
                     </div>
-                    <div className="mt-1 text-sm text-textDark font-medium">
-                      {resolvedCheckin && resolvedCheckout
-                        ? `${formatDate(resolvedCheckin)} – ${formatDate(resolvedCheckout)}`
-                        : "Select dates"}
-                    </div>
-                    <div className="text-xs text-textMedium">
-                      {resolvedAdults} guest{resolvedAdults > 1 ? "s" : ""}
+                    <h1 className="mt-2 font-heading text-3xl sm:text-4xl text-primary leading-tight">
+                      {hotelInfo?.hotelName || hotelInfo?.name || "Hotel"}
+                    </h1>
+                    <div className="mt-2 text-sm text-textMedium">
+                      {hotelInfo?.address || hotelInfo?.cityName || hotelInfo?.city || ""}
+                      {hotelInfo?.country ? `, ${hotelInfo.country}` : ""}
+                      <span className="mx-2 text-textLight">·</span>
+                      Trusted by international travelers
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setModifyOpen((v) => !v)}
-                  >
-                    Modify
-                  </Button>
                 </div>
 
-                <AnimatePresence initial={false}>
-                  {modifyOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="pt-3 space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            id="modify-checkin"
-                            type="date"
-                            label="Check-in"
-                            value={localSearch.checkin}
-                            onChange={(e) =>
-                              setLocalSearch((p) => ({
-                                ...p,
-                                checkin: e.target.value
-                              }))
-                            }
-                          />
-                          <Input
-                            id="modify-checkout"
-                            type="date"
-                            label="Check-out"
-                            value={localSearch.checkout}
-                            onChange={(e) =>
-                              setLocalSearch((p) => ({
-                                ...p,
-                                checkout: e.target.value
-                              }))
-                            }
-                          />
-                        </div>
-                        <Input
-                          id="modify-adults"
-                          type="number"
-                          min={1}
-                          label="Guests"
-                          value={localSearch.adults}
-                          onChange={(e) =>
-                            setLocalSearch((p) => ({
-                              ...p,
-                              adults: e.target.value
-                            }))
-                          }
-                        />
-                        <Button type="button" className="w-full" onClick={handleApplySearch}>
-                          {refreshing ? "Refreshing…" : "Apply"}
-                        </Button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <div className="border-t border-slate-100 pt-4 space-y-3">
-                  <div className="text-xs uppercase tracking-[0.18em] text-textLight">
-                    Selected room
+                <div className="mt-6 border-b border-slate-100">
+                  <div className="flex items-center gap-6 text-sm">
+                    {[
+                      { key: "rooms", label: "Rooms" },
+                      { key: "overview", label: "Overview" },
+                      { key: "reviews", label: "Reviews" }
+                    ].map((t) => {
+                      const active = activeTab === t.key;
+                      return (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => setActiveTab(t.key)}
+                          className={`relative py-3 font-medium transition ${
+                            active ? "text-primary" : "text-textMedium hover:text-primary"
+                          }`}
+                        >
+                          {t.label}
+                          {active && (
+                            <motion.div
+                              layoutId="hotel-tabs-underline"
+                              className="absolute left-0 right-0 -bottom-[1px] h-[2px] bg-accent"
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <AnimatePresence initial={false} mode="wait">
+                </div>
+
+                <div className="mt-6">
+                  {activeTab === "rooms" && (
+                    <div className="space-y-4">
+                      <div className="text-xl font-heading text-primary">
+                        Choose your room rate
+                      </div>
+                      {flattenedOffers.length === 0 ? (
+                        <div className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5 text-sm text-textMedium">
+                          No rooms available for your dates. Try adjusting your stay.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {flattenedOffers.map((offer, index) => (
+                            <RoomCard
+                              key={`${offer.offerId}-${index}`}
+                              offer={{
+                                ...offer,
+                                isBestDeal: bestOfferId && offer.offerId === bestOfferId
+                              }}
+                              selected={selectedRoom?.offerId === offer.offerId}
+                              onSelect={() => handleSelectRoom(offer)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "overview" && (
+                    <div className="space-y-4">
+                      <div className="text-xl font-heading text-primary">
+                        Overview
+                      </div>
+                      <div className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5 text-sm text-textMedium leading-relaxed">
+                        {stripHtml(
+                          hotelInfo?.hotelDescription ||
+                            hotelInfo?.description ||
+                            hotelInfo?.hotelInfo ||
+                            ""
+                        ) || "A refined stay with curated comfort and premium amenities."}
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === "reviews" && (
+                    <div className="space-y-4">
+                      <div className="text-xl font-heading text-primary">
+                        Reviews
+                      </div>
+                      <div className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5 text-sm text-textMedium">
+                        Reviews coming soon.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="order-1 lg:order-2 sticky top-20">
+                <aside className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5 space-y-4 text-sm">
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <div className="text-xs text-textLight">From</div>
+                      <div className="flex items-baseline gap-2">
+                        <div className="text-3xl font-semibold text-primary">
+                          {minPerNight != null ? formatCurrency(minPerNight) : "—"}
+                        </div>
+                        <div className="text-xs text-textLight">/ night</div>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-textLight text-right">
+                      Prices may increase
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-background border border-slate-100 p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input
+                        id="sidebar-checkin"
+                        type="date"
+                        label="Check in"
+                        value={localSearch.checkin}
+                        onChange={(e) =>
+                          setLocalSearch((p) => ({ ...p, checkin: e.target.value }))
+                        }
+                      />
+                      <Input
+                        id="sidebar-checkout"
+                        type="date"
+                        label="Check out"
+                        value={localSearch.checkout}
+                        onChange={(e) =>
+                          setLocalSearch((p) => ({ ...p, checkout: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <Input
+                      id="sidebar-adults"
+                      type="number"
+                      min={1}
+                      label="Guests"
+                      value={localSearch.adults}
+                      onChange={(e) =>
+                        setLocalSearch((p) => ({ ...p, adults: e.target.value }))
+                      }
+                    />
+                    <Button type="button" className="w-full" onClick={handleUpdateRates}>
+                      {refreshing ? "Updating…" : "Update rates"}
+                    </Button>
+                    <div className="text-[11px] text-textLight">
+                      Prices may increase — secure your rate now
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="text-xs uppercase tracking-[0.18em] text-textLight">
+                      Selected
+                    </div>
                     {selectedRoom ? (
-                      <motion.div
-                        key="selected"
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 8 }}
-                        className="rounded-xl bg-background border border-slate-100 p-3 space-y-2"
-                      >
+                      <div className="rounded-xl bg-background border border-slate-100 p-4 space-y-3">
                         <div className="font-medium text-textDark">
                           {selectedRoom.rateName}
                         </div>
                         <div className="flex flex-wrap gap-2 text-xs">
-                          {selectedRoom.board && (
-                            <Badge color="info">{selectedRoom.board}</Badge>
-                          )}
+                          {selectedRoom.board ? <Badge color="info">{selectedRoom.board}</Badge> : null}
                           {selectedRoom.refundableTag === "RFN" ? (
                             <Badge color="success">Refundable</Badge>
                           ) : (
@@ -447,41 +581,32 @@ function HotelDetailsPage() {
                           )}
                         </div>
                         <div className="flex items-baseline justify-between">
-                          <div className="text-xs text-textMedium">Total</div>
-                          <div className="text-base font-semibold text-primary">
+                          <div className="text-xs text-textMedium">
+                            Total for {nightsBetween(resolvedCheckin, resolvedCheckout) || 1} night
+                            {nightsBetween(resolvedCheckin, resolvedCheckout) === 1 ? "" : "s"}
+                          </div>
+                          <div className="text-lg font-semibold text-primary">
                             {formatCurrency(selectedRoom.retailRate)}
                           </div>
                         </div>
-                      </motion.div>
+                      </div>
                     ) : (
-                      <motion.div
-                        key="none"
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 8 }}
-                        className="text-xs text-textMedium"
-                      >
+                      <div className="text-xs text-textMedium">
                         Select a room to continue to checkout.
-                      </motion.div>
+                      </div>
                     )}
-                  </AnimatePresence>
-                </div>
-
-                <Button
-                  type="button"
-                  className="w-full"
-                  disabled={!selectedRoom?.offerId}
-                  onClick={handleContinue}
-                >
-                  Continue to Checkout →
-                </Button>
-
-                {refreshing && (
-                  <div className="text-[11px] text-textLight">
-                    Updating available rates…
                   </div>
-                )}
-              </aside>
+
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={!selectedRoom?.offerId}
+                    onClick={handleContinue}
+                  >
+                    Continue to Checkout →
+                  </Button>
+                </aside>
+              </div>
             </div>
           </div>
         )}

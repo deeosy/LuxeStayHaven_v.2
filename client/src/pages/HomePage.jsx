@@ -2,6 +2,7 @@ import React from "react";
 import { Helmet } from "react-helmet-async";
 import Hero from "../components/home/Hero.jsx";
 import FeaturedDestinations from "../components/home/FeaturedDestinations.jsx";
+import TrustSignals from "../components/home/TrustSignals.jsx";
 import WhyLuxeStay from "../components/home/WhyLuxeStay.jsx";
 
 function HomePage() {
@@ -41,6 +42,7 @@ function HomePage() {
       </Helmet>
       <Hero />
       <FeaturedDestinations />
+      <TrustSignals />
       <WhyLuxeStay />
     </div>
   );
