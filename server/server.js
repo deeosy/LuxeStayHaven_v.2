@@ -246,7 +246,9 @@ app.get("/search-hotels", async (req, res) => {
     environment,
     starRating,
     refundable,
-    boardType
+    boardType,
+    offset,
+    limit
   } = req.query;
   const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
@@ -264,10 +266,13 @@ app.get("/search-hotels", async (req, res) => {
     }
 
     let hotels = [];
+    const offsetN = Math.max(0, parseInt(offset, 10) || 0);
+    const limitN = Math.min(50, Math.max(1, parseInt(limit, 10) || 9));
     if (placeId) {
       const url = new URL("https://api.liteapi.travel/v3.0/data/hotels");
       url.searchParams.set("placeId", String(placeId));
-      url.searchParams.set("limit", "50");
+      url.searchParams.set("limit", String(limitN));
+      url.searchParams.set("offset", String(offsetN));
       const data = await httpGetJson(url.toString(), apiKey);
       hotels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
     } else if (latitude && longitude) {
@@ -275,7 +280,8 @@ app.get("/search-hotels", async (req, res) => {
       url.searchParams.set("latitude", String(latitude));
       url.searchParams.set("longitude", String(longitude));
       url.searchParams.set("radius", String(radius || 3000));
-      url.searchParams.set("limit", "50");
+      url.searchParams.set("limit", String(limitN));
+      url.searchParams.set("offset", String(offsetN));
       const data = await httpGetJson(url.toString(), apiKey);
       hotels = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
     } else {
@@ -287,7 +293,7 @@ app.get("/search-hotels", async (req, res) => {
           error: "countryCode is required (e.g. FR for France, US for USA)"
         });
       }
-      const hotelsResponse = await sdk.getHotels(countryCode, city, 0, 10);
+      const hotelsResponse = await sdk.getHotels(countryCode, city, offsetN, limitN);
       const hotelsFail = liteApiFailure(hotelsResponse);
       if (hotelsFail) {
         console.error("getHotels failed:", hotelsFail);
@@ -315,7 +321,7 @@ app.get("/search-hotels", async (req, res) => {
 
     const hotelIds = hotels.map((hotel) => hotel.id);
     if (hotelIds.length === 0) {
-      return res.json({ rates: [] });
+      return res.json({ rates: [], nextOffset: offsetN, hasMore: false });
     }
     const parsedOccupancies = parseOccupanciesParam(occupancies);
     const occupanciesArray = Array.isArray(parsedOccupancies)
@@ -395,7 +401,7 @@ app.get("/search-hotels", async (req, res) => {
         .filter(Boolean);
     }
 
-    res.json({ rates });
+    res.json({ rates, nextOffset: offsetN + hotels.length, hasMore: hotels.length === limitN });
   } catch (error) {
     console.error("Error searching for hotels:", error?.response?.data || error);
     res.status(500).json({ error: "Internal server error" });

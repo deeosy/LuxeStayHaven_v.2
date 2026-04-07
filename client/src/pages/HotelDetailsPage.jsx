@@ -44,6 +44,17 @@ function stripHtml(value) {
   return noTags.replace(/\s+/g, " ").trim();
 }
 
+function hashStringToIndex(value, modulo) {
+  const m = Number(modulo);
+  if (!Number.isFinite(m) || m <= 0) return 0;
+  const s = String(value || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return h % m;
+}
+
 
 function HotelDetailsPage() {
   const { hotelId } = useParams();
@@ -168,6 +179,11 @@ function HotelDetailsPage() {
     }, null);
     return best?.offerId || "";
   }, [flattenedOffers]);
+
+  const hotelImages = useMemo(() => {
+    const list = Array.isArray(hotelInfo?.hotelImages) ? hotelInfo.hotelImages : [];
+    return list;
+  }, [hotelInfo?.hotelImages]);
 
   const minPerNight = useMemo(() => {
     const nights = nightsBetween(resolvedCheckin, resolvedCheckout) || 1;
@@ -467,7 +483,10 @@ function HotelDetailsPage() {
                               key={`${offer.offerId}-${index}`}
                               offer={{
                                 ...offer,
-                                isBestDeal: bestOfferId && offer.offerId === bestOfferId
+                                isBestDeal: bestOfferId && offer.offerId === bestOfferId,
+                                hotelImages,
+                                imageIndex: hashStringToIndex(offer?.offerId || index, hotelImages.length),
+                                hotelMainPhoto: hotelInfo?.main_photo || ""
                               }}
                               selected={selectedRoom?.offerId === offer.offerId}
                               onSelect={() => handleSelectRoom(offer)}
@@ -507,7 +526,7 @@ function HotelDetailsPage() {
                 </div>
               </div>
 
-              <div className="order-1 lg:order-2 sticky top-20">
+              <div className="order-1 lg:order-2 lg:sticky lg:top-20">
                 <aside className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5 space-y-4 text-sm">
                   <div className="flex items-end justify-between">
                     <div>
@@ -608,6 +627,37 @@ function HotelDetailsPage() {
                 </aside>
               </div>
             </div>
+
+            {selectedRoom && (
+              <>
+                <div className="h-20 lg:hidden" />
+                <div className="fixed inset-x-0 bottom-0 z-40 lg:hidden">
+                  <div className="max-w-6xl mx-auto px-4 pb-[env(safe-area-inset-bottom)]">
+                    <div className="rounded-2xl bg-white/92 backdrop-blur border border-slate-200 shadow-soft p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Selected
+                        </div>
+                        <div className="text-sm font-medium text-textDark truncate">
+                          {selectedRoom.rateName}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="text-[11px] text-textLight">Total</div>
+                          <div className="text-base font-semibold text-primary">
+                            {formatCurrency(selectedRoom.retailRate)}
+                          </div>
+                        </div>
+                        <Button type="button" onClick={handleContinue}>
+                          Continue →
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

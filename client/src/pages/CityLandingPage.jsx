@@ -294,6 +294,9 @@ function CityLandingPage() {
           <img
             src={cityMeta.heroImage}
             alt={cityMeta.city}
+            loading="lazy"
+            decoding="async"
+            sizes="100vw"
             className="h-full w-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/25 to-black/30" />

@@ -80,20 +80,103 @@ function pickBookingDetails(payload) {
     return "";
   })();
 
+  const status = bookingData?.status || bookingData?.bookingStatus || "";
+
+  const board =
+    bookingData?.bookedRooms?.[0]?.rate?.boardName ||
+    bookingData?.bookedRooms?.[0]?.rate?.board ||
+    bookingData?.bookedRooms?.[0]?.rate?.boardType ||
+    "";
+
+  const refundableTag =
+    bookingData?.bookedRooms?.[0]?.rate?.cancellationPolicies?.refundableTag ||
+    bookingData?.cancellationPolicies?.refundableTag ||
+    "";
+
+  const cancelPolicyInfos =
+    bookingData?.bookedRooms?.[0]?.rate?.cancellationPolicies?.cancelPolicyInfos ||
+    bookingData?.cancellationPolicies?.cancelPolicyInfos ||
+    [];
+
   return {
     bookingId,
     hotelName,
     checkin,
     checkout,
     roomType,
+    board,
     amount,
     currency,
     guestName,
     guestsSummary,
     hotelConfirmationNumber,
+    status,
+    refundableTag,
+    cancelPolicyInfos,
     bookingData,
     bookingWrapper
   };
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatGuestsInline(bookingData, fallback) {
+  const room = bookingData?.bookedRooms?.[0];
+  const adults = room?.adults;
+  const children = room?.children;
+  const parts = [];
+  if (Number.isFinite(Number(adults))) {
+    const n = Number(adults);
+    parts.push(`${n} adult${n === 1 ? "" : "s"}`);
+  }
+  if (Number.isFinite(Number(children))) {
+    const n = Number(children);
+    parts.push(`${n} child${n === 1 ? "" : "ren"}`);
+  }
+  if (parts.length > 0) return parts.join(" · ");
+  return fallback || "—";
+}
+
+function pickFreeCancellationDeadline(cancelPolicyInfos) {
+  const infos = Array.isArray(cancelPolicyInfos) ? cancelPolicyInfos : [];
+  let best = null;
+  for (const info of infos) {
+    const amountRaw = info?.amount ?? info?.feeAmount ?? info?.cancelAmount ?? null;
+    const amount = amountRaw == null ? null : Number(amountRaw);
+    const type = String(info?.type || info?.cancelType || "").toLowerCase();
+    const looksFree =
+      (amount != null && Number.isFinite(amount) && amount === 0) ||
+      type.includes("free") ||
+      type.includes("no_fee");
+
+    if (!looksFree) continue;
+
+    const candidates = [
+      info?.cancelTime,
+      info?.deadline,
+      info?.from,
+      info?.dateTime,
+      info?.until,
+      info?.time
+    ].filter(Boolean);
+
+    for (const c of candidates) {
+      const s = String(c);
+      const d = new Date(s);
+      const epoch = d.getTime();
+      if (Number.isNaN(epoch)) continue;
+      if (!best || epoch > best.epoch) best = { epoch, raw: s };
+    }
+  }
+
+  return best?.raw || "";
 }
 
 function Confirmation() {
@@ -112,6 +195,7 @@ function Confirmation() {
   const [bookingPayload, setBookingPayload] = useState(null);
   const finalizeInFlight = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
 
   const details = useMemo(
     () => pickBookingDetails(bookingPayload),
@@ -124,6 +208,22 @@ function Confirmation() {
       .replace(/[^a-z0-9-_]/gi, "_")
       .slice(0, 48);
 
+    const checkinLabel = details.checkin ? formatDate(details.checkin) : "—";
+    const checkoutLabel = details.checkout ? formatDate(details.checkout) : "—";
+    const guestsLabel = formatGuestsInline(details.bookingData, details.guestsSummary || details.guestName);
+    const totalLabel =
+      details.amount != null
+        ? formatCurrency(details.amount, details.currency || "USD")
+        : "—";
+    const cancelDeadline = pickFreeCancellationDeadline(details.cancelPolicyInfos);
+    const cancelLabel = cancelDeadline
+      ? `Free cancellation until ${cancelDeadline}`
+      : details.refundableTag === "RFN"
+      ? "Refundable"
+      : details.refundableTag
+      ? `Refundable tag: ${details.refundableTag}`
+      : "—";
+
     const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -131,32 +231,176 @@ function Confirmation() {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${title}</title>
   <style>
-    body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; margin:32px; color:#0f172a;}
-    h1{margin:0 0 12px; font-size:22px;}
-    .muted{color:#475569; font-size:12px;}
-    .card{border:1px solid #e2e8f0; border-radius:16px; padding:16px; margin-top:16px;}
-    .grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;}
-    .label{font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:#64748b;}
-    .value{font-size:14px; font-weight:600;}
+    :root{
+      --bg:#ffffff;
+      --ink:#0f172a;
+      --muted:#475569;
+      --border:#e2e8f0;
+      --accent:#b38a4c;
+      --soft:#f8fafc;
+    }
+    *{box-sizing:border-box;}
+    body{
+      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+      margin:0;
+      color:var(--ink);
+      background:var(--bg);
+    }
+    .page{
+      max-width:900px;
+      margin:40px auto;
+      padding:0 24px 48px;
+    }
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:20px 0 18px;
+      border-bottom:1px solid var(--border);
+    }
+    .brand{
+      display:flex;
+      align-items:baseline;
+      gap:10px;
+    }
+    .logo{
+      font-size:18px;
+      letter-spacing:.08em;
+      font-weight:700;
+    }
+    .logo span{color:var(--accent);}
+    .tag{
+      font-size:11px;
+      letter-spacing:.2em;
+      text-transform:uppercase;
+      color:var(--muted);
+    }
+    h1{
+      margin:28px 0 8px;
+      font-size:28px;
+      letter-spacing:-.02em;
+    }
+    .subtitle{
+      color:var(--muted);
+      font-size:13px;
+      margin:0 0 18px;
+      line-height:1.6;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:14px;
+    }
+    .card{
+      border:1px solid var(--border);
+      border-radius:18px;
+      padding:18px;
+      background:var(--bg);
+    }
+    .card.soft{background:var(--soft);}
+    .label{
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:.14em;
+      color:var(--muted);
+      margin-bottom:6px;
+    }
+    .value{
+      font-size:14px;
+      font-weight:600;
+      line-height:1.35;
+      word-break:break-word;
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:8px 12px;
+      font-size:12px;
+      color:var(--muted);
+      background:var(--bg);
+    }
+    .pill b{color:var(--ink);}
+    .section{
+      margin-top:18px;
+    }
+    .footer{
+      margin-top:18px;
+      padding-top:16px;
+      border-top:1px solid var(--border);
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.6;
+    }
+    @media print{
+      .page{margin:0; padding:0 18mm 18mm;}
+      .topbar{padding-top:0;}
+      body{background:#fff;}
+    }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
-  <div class="muted">Generated by LuxeStayHaven</div>
-  <div class="card">
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">LuxeStay<span>Haven</span></div>
+        <div class="tag">Booking confirmation</div>
+      </div>
+      <div class="pill"><b>Status:</b> ${escapeHtml(details.status || "CONFIRMED")}</div>
+    </div>
+
+    <h1>Booking Confirmation</h1>
+    <p class="subtitle">
+      Thank you for booking with LuxeStayHaven. This document is your booking confirmation and can be printed for your records.
+    </p>
+
     <div class="grid">
-      <div><div class="label">Booking Reference</div><div class="value">${details.bookingId || "—"}</div></div>
-      <div><div class="label">Hotel Confirmation</div><div class="value">${details.hotelConfirmationNumber || "—"}</div></div>
-      <div><div class="label">Hotel</div><div class="value">${details.hotelName || "—"}</div></div>
-      <div><div class="label">Room</div><div class="value">${details.roomType || "—"}</div></div>
-      <div><div class="label">Check-in</div><div class="value">${details.checkin || "—"}</div></div>
-      <div><div class="label">Check-out</div><div class="value">${details.checkout || "—"}</div></div>
-      <div><div class="label">Guests</div><div class="value">${details.guestsSummary || details.guestName || "—"}</div></div>
-      <div><div class="label">Total Paid</div><div class="value">${
-        details.amount != null && details.currency
-          ? `${details.amount} ${details.currency}`
-          : "—"
-      }</div></div>
+      <div class="card soft">
+        <div class="label">Booking Reference</div>
+        <div class="value">${escapeHtml(details.bookingId || prebookId || "—")}</div>
+      </div>
+      <div class="card soft">
+        <div class="label">Hotel Confirmation Code</div>
+        <div class="value">${escapeHtml(details.hotelConfirmationNumber || "—")}</div>
+      </div>
+      <div class="card">
+        <div class="label">Hotel</div>
+        <div class="value">${escapeHtml(details.hotelName || "—")}</div>
+      </div>
+      <div class="card">
+        <div class="label">Room Type + Board</div>
+        <div class="value">${escapeHtml([details.roomType, details.board].filter(Boolean).join(" · ") || "—")}</div>
+      </div>
+      <div class="card">
+        <div class="label">Check-in</div>
+        <div class="value">${escapeHtml(checkinLabel)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Check-out</div>
+        <div class="value">${escapeHtml(checkoutLabel)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Guests</div>
+        <div class="value">${escapeHtml(guestsLabel)}</div>
+      </div>
+      <div class="card">
+        <div class="label">Total Paid</div>
+        <div class="value">${escapeHtml(totalLabel)}</div>
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="label">Cancellation policy</div>
+      <div class="value">${escapeHtml(cancelLabel)}</div>
+      ${details.refundableTag ? `<div class="subtitle" style="margin:10px 0 0">Refundable tag: ${escapeHtml(details.refundableTag)}</div>` : ""}
+    </div>
+
+    <div class="footer">
+      <div><b>Need help?</b> Your booking is secured. If you have questions, please contact support with your booking reference.</div>
+      <div style="margin-top:6px">LuxeStayHaven · Secure checkout powered by LiteAPI</div>
     </div>
   </div>
 </body>
@@ -412,13 +656,119 @@ function Confirmation() {
                 </div>
 
                 {showDetails && (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-textLight font-semibold mb-2">
-                      Booking payload
+                  <div className="rounded-2xl border border-slate-100 bg-white shadow-soft p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Booking details
+                        </div>
+                        <div className="text-sm font-medium text-textDark">
+                          Key information
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-textLight">
+                        Status:{" "}
+                        <span className="font-medium text-textDark">
+                          {details.status || "CONFIRMED"}
+                        </span>
+                      </div>
                     </div>
-                    <pre className="text-[11px] text-textMedium overflow-auto max-h-[420px] whitespace-pre-wrap break-words">
-                      {JSON.stringify(details.bookingWrapper, null, 2)}
-                    </pre>
+
+                    <div className="grid sm:grid-cols-2 gap-4 text-xs">
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Booking reference
+                        </div>
+                        <div className="mt-1 font-semibold text-textDark break-all">
+                          {details.bookingId || prebookId || "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Hotel confirmation code
+                        </div>
+                        <div className="mt-1 font-medium text-textDark break-all">
+                          {details.hotelConfirmationNumber || "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Hotel
+                        </div>
+                        <div className="mt-1 font-medium text-textDark">
+                          {details.hotelName || "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Room type + board
+                        </div>
+                        <div className="mt-1 font-medium text-textDark">
+                          {[details.roomType, details.board].filter(Boolean).join(" · ") || "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Dates
+                        </div>
+                        <div className="mt-1 font-medium text-textDark">
+                          {details.checkin ? formatDate(details.checkin) : "—"} –{" "}
+                          {details.checkout ? formatDate(details.checkout) : "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Guests
+                        </div>
+                        <div className="mt-1 font-medium text-textDark">
+                          {formatGuestsInline(details.bookingData, details.guestsSummary || details.guestName)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Total paid
+                        </div>
+                        <div className="mt-1 font-semibold text-primary">
+                          {details.amount != null ? formatCurrency(details.amount, details.currency || "USD") : "—"}
+                        </div>
+                        <div className="mt-1 text-[11px] text-textLight">
+                          Currency: {(details.currency || "USD").toUpperCase()}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-background border border-slate-100 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-textLight">
+                          Cancellation policy
+                        </div>
+                        <div className="mt-1 font-medium text-textDark">
+                          {(() => {
+                            const deadline = pickFreeCancellationDeadline(details.cancelPolicyInfos);
+                            if (deadline) return `Free cancellation until ${deadline}`;
+                            if (details.refundableTag === "RFN") return "Refundable";
+                            if (details.refundableTag) return `Refundable tag: ${details.refundableTag}`;
+                            return "—";
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-1 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setShowRaw((v) => !v)}
+                        className="text-xs font-medium text-accent hover:text-accentAlt"
+                      >
+                        {showRaw ? "Hide raw JSON" : "Show raw JSON"}
+                      </button>
+                      <div className="text-[11px] text-textLight">
+                        For debugging only
+                      </div>
+                    </div>
+
+                    {showRaw && (
+                      <pre className="text-[11px] text-textMedium overflow-auto max-h-[420px] whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white p-4">
+                        {JSON.stringify(details.bookingWrapper, null, 2)}
+                      </pre>
+                    )}
                   </div>
                 )}
 

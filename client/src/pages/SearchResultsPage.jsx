@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import useSearchStore from "../stores/useSearchStore.js";
@@ -7,9 +7,28 @@ import SearchBar from "../components/home/SearchBar.jsx";
 import HotelCard from "../components/search/HotelCard.jsx";
 import HotelCardSkeleton from "../components/search/HotelCardSkeleton.jsx";
 import Button from "../components/ui/Button.jsx";
-import Input from "../components/ui/Input.jsx";
 import { formatDate } from "../utils/formatters.js";
 import { trackOnce } from "../utils/analytics.js";
+
+const BATCH_SIZE = 9;
+
+// Performance: lazy-load the filters UI to keep initial search results render fast.
+const FiltersSidebar = React.lazy(() => import("../components/search/FiltersSidebar.jsx"));
+
+function mergeByHotelId(prev, next) {
+  const map = new Map();
+  for (const r of prev || []) {
+    if (r?.hotelId) map.set(r.hotelId, r);
+  }
+  const out = [...(prev || [])];
+  for (const r of next || []) {
+    if (!r?.hotelId) continue;
+    if (map.has(r.hotelId)) continue;
+    map.set(r.hotelId, r);
+    out.push(r);
+  }
+  return out;
+}
 
 function getCheapestNightlyAmount(rate) {
   let lowest = null;
@@ -124,6 +143,9 @@ function SearchResultsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const location = useLocation();
   const [roomsSummary, setRoomsSummary] = useState({ rooms: null, children: null });
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const searchResultsRef = useRef(searchResults);
   const appliedMinStars = useMemo(() => parseStarMin(query.get("starRating")), [query]);
   const appliedRefundableOnly = useMemo(
     () => parseBooleanParam(query.get("refundable")) === true,
@@ -251,6 +273,9 @@ function SearchResultsPage() {
   function clearAllFilters() {
     setDraftRefundableOnly(false);
     setDraftMinStars(0);
+    setHasMore(false);
+    setLoadingMore(false);
+    setSearchResults([]);
     if (priceBounds) {
       const nextMin = String(Math.floor(priceBounds.min));
       const nextMax = String(Math.ceil(priceBounds.max));
@@ -276,6 +301,9 @@ function SearchResultsPage() {
   function applyFilters() {
     setAppliedPriceMin(draftPriceMin);
     setAppliedPriceMax(draftPriceMax);
+    setHasMore(false);
+    setLoadingMore(false);
+    setSearchResults([]);
 
     const next = new URLSearchParams(location.search || "");
     if (draftMinStars > 0) next.set("starRating", String(draftMinStars));
@@ -292,6 +320,10 @@ function SearchResultsPage() {
     if (typeof window === "undefined") return;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  useEffect(() => {
+    searchResultsRef.current = searchResults;
+  }, [searchResults]);
 
   useEffect(() => {
     const raw = query.get("occupancies") || "";
@@ -390,6 +422,9 @@ function SearchResultsPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setHasMore(false);
+    setLoadingMore(false);
+    setSearchResults([]);
     searchHotels({
       checkin,
       checkout,
@@ -404,11 +439,15 @@ function SearchResultsPage() {
       starRating: starRatingParam || "",
       refundable: refundableParam == null ? null : refundableParam,
       boardType: boardTypeParam || "",
+      offset: 0,
+      limit: BATCH_SIZE,
       environment
     })
       .then((data) => {
         if (cancelled) return;
-        setSearchResults(data.rates || []);
+        const nextRates = Array.isArray(data?.rates) ? data.rates : [];
+        setSearchResults(nextRates);
+        setHasMore(Boolean(data?.hasMore) && nextRates.length > 0);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -431,6 +470,54 @@ function SearchResultsPage() {
     setDates,
     setAdults
   ]);
+
+  const loadMore = useCallback(async () => {
+    if (loading || loadingMore || !hasMore) return;
+    const city = query.get("city");
+    const countryCode = query.get("countryCode") || "";
+    const placeId = query.get("placeId") || "";
+    const latitude = query.get("latitude") || "";
+    const longitude = query.get("longitude") || "";
+    const radius = query.get("radius") || "";
+    const occupancies = query.get("occupancies") || "";
+    const checkin = query.get("checkin") || "";
+    const checkout = query.get("checkout") || "";
+    const adults = Number(query.get("adults") || 2);
+    const starRatingParam = query.get("starRating") || "";
+    const refundableParam = query.get("refundable");
+    const boardTypeParam = query.get("boardType") || "";
+
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const current = searchResultsRef.current || [];
+      const data = await searchHotels({
+        checkin,
+        checkout,
+        adults,
+        city: city || "",
+        countryCode: countryCode.toUpperCase(),
+        placeId: placeId || "",
+        latitude: latitude || "",
+        longitude: longitude || "",
+        radius: radius || "",
+        occupancies: occupancies || "",
+        starRating: starRatingParam || "",
+        refundable: refundableParam == null ? null : refundableParam,
+        boardType: boardTypeParam || "",
+        offset: current.length,
+        limit: BATCH_SIZE,
+        environment
+      });
+      const nextRates = Array.isArray(data?.rates) ? data.rates : [];
+      setSearchResults(mergeByHotelId(current, nextRates));
+      setHasMore(Boolean(data?.hasMore) && nextRates.length > 0);
+    } catch (err) {
+      setError(err?.message || "Failed to load more hotels");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [BATCH_SIZE, environment, hasMore, loading, loadingMore, query, setError, setSearchResults]);
 
   const title = useMemo(() => {
     const city = query.get("city");
@@ -515,124 +602,34 @@ function SearchResultsPage() {
                   : "Select dates to see the best available rates."}
               </p>
             </div>
-            <div
-              className={`rounded-2xl bg-white border border-slate-100 shadow-soft p-4 sm:p-5 space-y-6 text-sm ${
-                filtersOpen ? "" : "hidden lg:block"
-              }`}
+            <Suspense
+              fallback={
+                <div className={`rounded-2xl bg-white border border-slate-100 shadow-soft p-4 sm:p-5 space-y-4 ${filtersOpen ? "" : "hidden lg:block"}`}>
+                  <div className="h-6 w-24 bg-slate-100 rounded" />
+                  <div className="h-20 bg-slate-100 rounded-xl" />
+                  <div className="h-16 bg-slate-100 rounded-xl" />
+                  <div className="h-16 bg-slate-100 rounded-xl" />
+                </div>
+              }
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-heading text-lg text-primary">Filters</h3>
-                  {activeFilterCount > 0 && (
-                    <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-accent/10 px-2 text-xs font-medium text-accent">
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  {activeFilterCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      className="text-xs font-medium text-accent hover:text-accentAlt"
-                    >
-                      Clear all
-                    </button>
-                  )}
-                  <div className="lg:hidden">
-                    <Button type="button" variant="ghost" onClick={() => setFiltersOpen(false)}>
-                      Close
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="text-xs uppercase tracking-[0.18em] text-textLight">
-                  Price range
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    id="minPrice"
-                    type="number"
-                    label="Min"
-                    placeholder={priceBounds ? String(Math.floor(priceBounds.min)) : "0"}
-                    value={draftPriceMin}
-                    min={0}
-                    onChange={(e) => setDraftPriceMin(e.target.value)}
-                  />
-                  <Input
-                    id="maxPrice"
-                    type="number"
-                    label="Max"
-                    placeholder={priceBounds ? String(Math.ceil(priceBounds.max)) : "2000"}
-                    value={draftPriceMax}
-                    min={0}
-                    onChange={(e) => setDraftPriceMax(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-textLight">
-                  <span>{priceBounds ? "Best available rate" : "—"}</span>
-                  <span>Per night</span>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="text-xs uppercase tracking-[0.18em] text-textLight">
-                  Stars
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[3, 4, 5].map((n) => {
-                    const active = draftMinStars === n;
-                    return (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setDraftMinStars((cur) => (cur === n ? 0 : n))}
-                        className={[
-                          "rounded-full border px-3 py-2 text-xs transition",
-                          active
-                            ? "border-accent bg-accent text-white"
-                            : "border-slate-200 bg-white text-textMedium hover:border-slate-300"
-                        ].join(" ")}
-                      >
-                        {n === 5 ? "5" : `${n}+`}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="text-xs uppercase tracking-[0.18em] text-textLight">
-                  Refundable
-                </div>
-                <label className="flex items-center gap-2 text-xs text-textMedium">
-                  <input
-                    type="checkbox"
-                    checked={draftRefundableOnly}
-                    onChange={(e) => setDraftRefundableOnly(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  Show refundable only
-                </label>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex gap-2">
-                <Button type="button" className="flex-1" onClick={applyFilters} disabled={loading}>
-                  Apply
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={clearAllFilters}
-                  disabled={loading}
-                >
-                  Clear
-                </Button>
-              </div>
-            </div>
+              <FiltersSidebar
+                filtersOpen={filtersOpen}
+                setFiltersOpen={setFiltersOpen}
+                activeFilterCount={activeFilterCount}
+                clearAllFilters={clearAllFilters}
+                priceBounds={priceBounds}
+                draftPriceMin={draftPriceMin}
+                setDraftPriceMin={setDraftPriceMin}
+                draftPriceMax={draftPriceMax}
+                setDraftPriceMax={setDraftPriceMax}
+                draftMinStars={draftMinStars}
+                setDraftMinStars={setDraftMinStars}
+                draftRefundableOnly={draftRefundableOnly}
+                setDraftRefundableOnly={setDraftRefundableOnly}
+                applyFilters={applyFilters}
+                loading={loading}
+              />
+            </Suspense>
           </aside>
 
           <div className="space-y-4 min-w-0">
@@ -642,8 +639,8 @@ function SearchResultsPage() {
                   {loading
                     ? "Searching…"
                     : activeFilterCount > 0
-                    ? `${sortedResults.length} of ${searchResults.length} hotels`
-                    : `${searchResults.length} hotel${searchResults.length === 1 ? "" : "s"} found`}
+                    ? `${sortedResults.length} of ${searchResults.length}${hasMore ? "+" : ""} shown`
+                    : `${searchResults.length}${hasMore ? "+" : ""} hotel${searchResults.length === 1 ? "" : "s"} loaded`}
                 </div>
                 <div className="lg:hidden">
                   <Button type="button" variant="secondary" onClick={() => setFiltersOpen(true)}>
@@ -703,6 +700,11 @@ function SearchResultsPage() {
                   Try widening your price range, lowering the star minimum, or modifying your search.
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center gap-2">
+                  {hasMore && (
+                    <Button type="button" variant="secondary" onClick={loadMore} disabled={loadingMore}>
+                      {loadingMore ? "Loading more…" : "Load more hotels"}
+                    </Button>
+                  )}
                   <Button type="button" variant="secondary" onClick={clearAllFilters}>
                     Clear all filters
                   </Button>
@@ -714,19 +716,39 @@ function SearchResultsPage() {
             )}
 
             {!loading && !error && sortedResults.length > 0 && (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {sortedResults.map((rate) => (
-                  <HotelCard
-                    key={rate.hotelId}
-                    rate={rate}
-                    searchParams={{
-                      checkin: query.get("checkin") || storeCheckin,
-                      checkout: query.get("checkout") || storeCheckout,
-                      adults: Number(query.get("adults") || storeAdults || 2),
-                      environment
-                    }}
-                  />
-                ))}
+              <div className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {sortedResults.map((rate) => (
+                    <HotelCard
+                      key={rate.hotelId}
+                      rate={rate}
+                      searchParams={{
+                        checkin: query.get("checkin") || storeCheckin,
+                        checkout: query.get("checkout") || storeCheckout,
+                        adults: Number(query.get("adults") || storeAdults || 2),
+                        environment
+                      }}
+                    />
+                  ))}
+                </div>
+
+                {hasMore && (
+                  <div className="flex flex-col items-center gap-2">
+                    <Button type="button" variant="secondary" onClick={loadMore} disabled={loadingMore}>
+                      {loadingMore ? "Loading more…" : "Load more"}
+                    </Button>
+                    {loadingMore && (
+                      <>
+                        <div className="text-[11px] text-textLight">Loading more hotels…</div>
+                        <div className="w-full grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          {Array.from({ length: 3 }).map((_, i) => (
+                            <HotelCardSkeleton key={`more-${i}`} />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

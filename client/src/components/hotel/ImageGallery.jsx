@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring } from "framer-motion";
 
-function ImageGallery({ hotelInfo }) {
+// Performance: memoized gallery + lazy-loaded images (modal thumbnails included).
+const ImageGallery = React.memo(function ImageGallery({ hotelInfo }) {
   const images = hotelInfo?.hotelImages || [];
   const list = useMemo(() => {
     const urls = images
@@ -66,6 +67,9 @@ function ImageGallery({ hotelInfo }) {
           <motion.img
             src={active}
             alt={hotelInfo?.hotelName || "Hotel photo"}
+            loading="lazy"
+            decoding="async"
+            sizes="(max-width: 1024px) 100vw, 70vw"
             className="h-[320px] sm:h-[420px] lg:h-[520px] w-full object-cover"
             style={{ x: sx, y: sy, scale: 1.04 }}
             transition={{ type: "spring", stiffness: 80, damping: 22 }}
@@ -85,6 +89,9 @@ function ImageGallery({ hotelInfo }) {
               <img
                 src={url}
                 alt=""
+                loading="lazy"
+                decoding="async"
+                sizes="(max-width: 1024px) 50vw, 25vw"
                 className="h-[155px] sm:h-[205px] lg:h-[250px] w-full object-cover"
                 draggable={false}
               />
@@ -126,6 +133,9 @@ function ImageGallery({ hotelInfo }) {
                 <img
                   src={active}
                   alt=""
+                  loading="lazy"
+                  decoding="async"
+                  sizes="100vw"
                   className="w-full max-h-[78vh] object-contain bg-black"
                   draggable={false}
                 />
@@ -158,7 +168,15 @@ function ImageGallery({ hotelInfo }) {
                       idx === activeIndex ? "border-white" : "border-white/20"
                     }`}
                   >
-                    <img src={url} alt="" className="h-full w-full object-cover" draggable={false} />
+                    <img
+                      src={url}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      sizes="96px"
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                    />
                   </button>
                 ))}
               </div>
@@ -171,6 +189,6 @@ function ImageGallery({ hotelInfo }) {
       )}
     </div>
   );
-}
+});
 
 export default ImageGallery;

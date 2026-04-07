@@ -75,6 +75,8 @@ export async function searchHotels({
   starRating,
   refundable,
   boardType,
+  offset,
+  limit,
   environment
 }) {
   const cc = ensureCountryCode(city, countryCode);
@@ -96,6 +98,12 @@ export async function searchHotels({
     params.set("refundable", String(refundable));
   }
   if (boardType) params.set("boardType", String(boardType));
+  if (typeof offset !== "undefined" && offset !== null) {
+    params.set("offset", String(offset));
+  }
+  if (typeof limit !== "undefined" && limit !== null) {
+    params.set("limit", String(limit));
+  }
   if (environment) params.set("environment", environment);
   const base = await resolveApiBase();
   const res = await fetch(`${base}/search-hotels?${params.toString()}`);

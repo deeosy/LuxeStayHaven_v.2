@@ -8,6 +8,7 @@ import HotelDetailsPage from "./pages/HotelDetailsPage.jsx";
 import CheckoutPage from "./pages/CheckoutPage.jsx";
 import Confirmation from "./pages/Confirmation.jsx";
 import CityLandingPage from "./pages/CityLandingPage.jsx";
+import AboutPage from "./pages/AboutPage.jsx";
 
 const pageTransition = {
   initial: { opacity: 0, y: 16 },
@@ -26,6 +27,7 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/destinations/:citySlug" element={<CityLandingPage />} />
           <Route path="/search" element={<SearchResultsPage />} />
+          <Route path="/about" element={<AboutPage />} />
           <Route path="/hotel/:hotelId" element={<HotelDetailsPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/confirmation" element={<Confirmation />} />

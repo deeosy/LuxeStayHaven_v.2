@@ -11,6 +11,8 @@ function Hero() {
       <img
         src={heroImage}
         alt="Luxury resort overlooking the ocean"
+        loading="lazy"
+        decoding="async"
         className="absolute inset-0 h-full w-full object-cover"
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/15 to-black/25" />

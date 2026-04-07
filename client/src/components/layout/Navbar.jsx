@@ -48,9 +48,9 @@ function Navbar() {
             <a href="/#destinations" className="hover:text-accent transition">
               Destinations
             </a>
-            <a href="/#about" className="hover:text-accent transition">
+            <Link to="/about" className="hover:text-accent transition">
               About
-            </a>
+            </Link>
             <Link to="/confirmation" className="hover:text-accent transition">
               My Bookings
             </Link>
@@ -126,13 +126,13 @@ function Navbar() {
             >
               Destinations
             </a>
-            <a
-              href="/#about"
+            <Link
+              to="/about"
               className="hover:text-accent transition"
               onClick={() => setMenuOpen(false)}
             >
               About
-            </a>
+            </Link>
             <Link
               to="/confirmation"
               className="hover:text-accent transition"

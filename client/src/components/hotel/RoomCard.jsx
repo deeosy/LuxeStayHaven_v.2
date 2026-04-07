@@ -3,6 +3,48 @@ import Button from "../ui/Button.jsx";
 import Badge from "../ui/Badge.jsx";
 import { formatCurrency } from "../../utils/formatters.js";
 
+function firstUrl(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value?.url === "string") return value.url;
+  return "";
+}
+
+function pickFirstImageUrl(list) {
+  if (!Array.isArray(list) || list.length === 0) return "";
+  for (const item of list) {
+    const url = firstUrl(item);
+    if (url) return url;
+  }
+  return "";
+}
+
+function resolveRoomThumbnail(offer) {
+  const fromRoomType =
+    pickFirstImageUrl(offer?.roomType?.images) ||
+    pickFirstImageUrl(offer?.roomType?.roomImages) ||
+    pickFirstImageUrl(offer?.roomTypeImages) ||
+    pickFirstImageUrl(offer?.roomImages) ||
+    pickFirstImageUrl(offer?.images) ||
+    firstUrl(offer?.imageUrl) ||
+    firstUrl(offer?.image) ||
+    firstUrl(offer?.roomImageUrl) ||
+    firstUrl(offer?.roomImage);
+  if (fromRoomType) return fromRoomType;
+
+  const hotelImages = Array.isArray(offer?.hotelImages) ? offer.hotelImages : [];
+  if (hotelImages.length > 0) {
+    const urls = hotelImages.map(firstUrl).filter(Boolean);
+    const idxRaw = offer?.imageIndex;
+    const idx = Number.isFinite(Number(idxRaw)) ? Number(idxRaw) : 0;
+    const picked = urls.length > 0 ? urls[idx % urls.length] : "";
+    if (picked) return picked;
+  }
+
+  return "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80";
+}
+
+// Thumbnail priority: room-level images (when present) → hotel images (stable per offer) → premium fallback.
 function CheckItem({ children }) {
   return (
     <div className="flex items-start gap-2 text-xs text-textMedium">
@@ -16,7 +58,20 @@ function CheckItem({ children }) {
   );
 }
 
-function RoomCard({ offer, onSelect, selected = false }) {
+function buildUnsplashSrcSet(url) {
+  const s = String(url || "");
+  if (!s.includes("images.unsplash.com/")) return "";
+  const widths = [200, 320, 480, 640];
+  return widths
+    .map((w) => {
+      const hasW = /[?&]w=\d+/.test(s);
+      const withW = hasW ? s.replace(/([?&]w=)\d+/, `$1${w}`) : `${s}${s.includes("?") ? "&" : "?"}w=${w}`;
+      return `${withW} ${w}w`;
+    })
+    .join(", ");
+}
+
+const RoomCard = React.memo(function RoomCard({ offer, onSelect, selected = false }) {
   const { rateName, board, refundableTag, retailRate, originalRate, isBestDeal, amenities } = offer;
   const list = Array.isArray(amenities) && amenities.length > 0 ? amenities : [];
   const shownAmenities =
@@ -30,26 +85,44 @@ function RoomCard({ offer, onSelect, selected = false }) {
           board ? String(board) : "Room only options"
         ].filter(Boolean);
 
+  const thumb = resolveRoomThumbnail(offer);
+  const srcSet = buildUnsplashSrcSet(thumb);
+
   return (
     <div className={`rounded-2xl border bg-white shadow-soft transition ${selected ? "border-accent ring-2 ring-accent/20" : "border-slate-100 hover:border-slate-200"}`}>
       <div className="p-5">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="font-heading text-base sm:text-lg text-primary truncate">
-                {rateName}
-              </h3>
-              {isBestDeal && (
-                <span className="inline-flex items-center rounded-full bg-accent/10 px-2 py-1 text-[11px] font-medium text-accent">
-                  Best deal
-                </span>
-              )}
+          <div className="min-w-0 flex gap-4">
+            <div className="h-24 w-24 sm:h-28 sm:w-28 rounded-2xl overflow-hidden bg-slate-100 border border-slate-100 shadow-soft flex-shrink-0">
+              <img
+                src={thumb}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                sizes="112px"
+                srcSet={srcSet || undefined}
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
             </div>
 
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {shownAmenities.map((a) => (
-                <CheckItem key={a}>{a}</CheckItem>
-              ))}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="font-heading text-base sm:text-lg text-primary truncate">
+                  {rateName}
+                </h3>
+                {isBestDeal && (
+                  <span className="inline-flex items-center rounded-full bg-accent/10 px-2 py-1 text-[11px] font-medium text-accent">
+                    Best deal
+                  </span>
+                )}
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {shownAmenities.map((a) => (
+                  <CheckItem key={a}>{a}</CheckItem>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -98,6 +171,6 @@ function RoomCard({ offer, onSelect, selected = false }) {
       </div>
     </div>
   );
-}
+});
 
 export default RoomCard;

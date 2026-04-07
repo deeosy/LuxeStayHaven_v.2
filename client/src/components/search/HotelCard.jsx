@@ -5,7 +5,21 @@ import { formatCurrency } from "../../utils/formatters.js";
 import useSearchStore from "../../stores/useSearchStore.js";
 import FavoriteButton from "../ui/FavoriteButton.jsx";
 
-function HotelCard({ rate, searchParams }) {
+function buildUnsplashSrcSet(url) {
+  const s = String(url || "");
+  if (!s.includes("images.unsplash.com/")) return "";
+  const widths = [400, 800, 1200, 1600];
+  return widths
+    .map((w) => {
+      const hasW = /[?&]w=\d+/.test(s);
+      const withW = hasW ? s.replace(/([?&]w=)\d+/, `$1${w}`) : `${s}${s.includes("?") ? "&" : "?"}w=${w}`;
+      return `${withW} ${w}w`;
+    })
+    .join(", ");
+}
+
+// Performance: memoized card + lazy-loaded responsive images to reduce re-renders and bandwidth.
+const HotelCard = React.memo(function HotelCard({ rate, searchParams }) {
   const { checkin, checkout, adults, environment } = useSearchStore();
   const location = useLocation();
 
@@ -32,6 +46,7 @@ function HotelCard({ rate, searchParams }) {
   const image =
     hotel.main_photo ||
     "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=1200&q=80";
+  const srcSet = buildUnsplashSrcSet(image);
 
   const price = cheapestOffer?.amount ?? null;
   const originalRaw = offer?.retailRate?.suggestedSellingPrice?.[0]?.amount ?? null;
@@ -66,6 +81,10 @@ function HotelCard({ rate, searchParams }) {
           <img
             src={image}
             alt={hotel.name}
+            loading="lazy"
+            decoding="async"
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            srcSet={srcSet || undefined}
             className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
           />
           <div className="absolute top-3 left-3 rounded-full bg-black/50 px-2.5 py-1 text-xs text-white">
@@ -116,6 +135,6 @@ function HotelCard({ rate, searchParams }) {
       </Link>
     </motion.article>
   );
-}
+});
 
 export default HotelCard;
