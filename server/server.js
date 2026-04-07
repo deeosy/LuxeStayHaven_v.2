@@ -181,9 +181,15 @@ app.get("/places", async (req, res) => {
     ip,
     environment
   } = req.query;
-  const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
+  const resolvedEnvironment =
+    environment ||
+    process.env.LITEAPI_ENVIRONMENT ||
+    (process.env.NODE_ENV === "production" ? "production" : "sandbox");
+  const apiKey =
+    resolvedEnvironment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   if (!apiKey || String(apiKey).trim() === "") {
-    const keyName = environment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
+    const keyName =
+      resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
     return res.status(401).json({
       error: `Missing ${keyName} in .env. Copy your key from https://dashboard.liteapi.travel/`,
     });
@@ -231,7 +237,6 @@ app.get("/places", async (req, res) => {
 });
 
 app.get("/search-hotels", async (req, res) => {
-  console.log("Search endpoint hit");
   const {
     checkin,
     checkout,
@@ -250,7 +255,12 @@ app.get("/search-hotels", async (req, res) => {
     offset,
     limit
   } = req.query;
-  const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
+  const resolvedEnvironment =
+    environment ||
+    process.env.LITEAPI_ENVIRONMENT ||
+    (process.env.NODE_ENV === "production" ? "production" : "sandbox");
+  const apiKey =
+    resolvedEnvironment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
   const checkinDate = checkin || today.toISOString().split('T')[0];
@@ -259,7 +269,8 @@ app.get("/search-hotels", async (req, res) => {
   try {
 
     if (!apiKey || String(apiKey).trim() === "") {
-      const keyName = environment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
+      const keyName =
+        resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
       return res.status(401).json({
         error: `Missing ${keyName} in .env. Copy your key from https://dashboard.liteapi.travel/`,
       });
@@ -346,12 +357,6 @@ app.get("/search-hotels", async (req, res) => {
     if (typeof refundableOnly === "boolean") ratesRequest.refundable = refundableOnly;
     if (boardTypes.length > 0) ratesRequest.boardType = boardTypes;
 
-    console.log("Rates search filters:", {
-      starRating: starRatings.length > 0 ? starRatings : null,
-      refundable: typeof refundableOnly === "boolean" ? refundableOnly : null,
-      boardType: boardTypes.length > 0 ? boardTypes : null
-    });
-
     const fullRatesResponse = await sdk.getFullRates(ratesRequest);
 
     const ratesFail = liteApiFailure(fullRatesResponse);
@@ -409,14 +414,19 @@ app.get("/search-hotels", async (req, res) => {
 });
 
 app.get("/search-rates", async (req, res) => {
-  console.log("Rate endpoint hit");
   const { checkin, checkout, adults, hotelId, environment } = req.query;
-  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+  const resolvedEnvironment =
+    environment ||
+    process.env.LITEAPI_ENVIRONMENT ||
+    (process.env.NODE_ENV === "production" ? "production" : "sandbox");
+  const apiKey =
+    resolvedEnvironment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
   try {
     if (!apiKey || String(apiKey).trim() === "") {
-      const keyName = environment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
+      const keyName =
+        resolvedEnvironment === "sandbox" ? "SAND_API_KEY" : "PROD_API_KEY";
       return res.status(401).json({
         error: `Missing ${keyName} in .env. Copy your key from https://dashboard.liteapi.travel/`,
       });
@@ -432,11 +442,6 @@ app.get("/search-rates", async (req, res) => {
       checkout,
     });
 
-    // Log full response for debugging
-    console.log("Full Rates Response Type:", typeof fullRatesResponse);
-    console.log("Full Rates Response Keys:", Object.keys(fullRatesResponse || {}));
-    console.log("Full Rates Response:", JSON.stringify(fullRatesResponse, null, 2));
-
     const ratesFail = liteApiFailure(fullRatesResponse);
     if (ratesFail) {
       console.error("getFullRates failed (search-rates):", ratesFail);
@@ -450,7 +455,6 @@ app.get("/search-rates", async (req, res) => {
       
       // No rates available for this hotel
       if (!Array.isArray(rates) || rates.length === 0) {
-        console.warn("No rates found for hotel:", hotelId);
         return res.json({ hotelInfo: {}, rateInfo: [] });
       }
 
@@ -558,17 +562,6 @@ app.post("/prebook", async (req, res) => {
     });
   }
 
-  console.log("Prebook called with offerId:", offerId);
-  console.log("prebook request:", {
-    offerId,
-    checkin,
-    checkout,
-    adults: adultsNum,
-    children: childrenNum,
-    hotelId,
-    environment: resolvedEnvironment
-  });
-
   const sdk = liteApi(apiKey);
 
   try {
@@ -655,19 +648,6 @@ async function handleBook(req, res) {
   }
 
   // Step 5: Call LiteAPI booking endpoint
-  console.log(
-    "Final /book called with prebookId:",
-    prebookId,
-    "transactionId:",
-    transactionId
-  );
-  console.log("book request:", {
-    prebookId,
-    transactionId,
-    environment: resolvedEnvironment,
-    holderEmail: holder?.email,
-  });
-
   try {
     const hasRatesBook = typeof sdk?.rates?.book === "function";
     // LiteAPI booking flow (Payment SDK):
@@ -696,11 +676,6 @@ async function handleBook(req, res) {
       console.error("book failed:", fail);
       return sendLiteApiError(res, fail);
     }
-
-    console.log("book success:", {
-      status: result?.status,
-      bookingId: result?.data?.bookingId,
-    });
 
     // Step 6: Return full booking object
     return res.json({

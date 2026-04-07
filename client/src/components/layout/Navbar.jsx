@@ -6,6 +6,10 @@ function Navbar() {
   const { environment, setEnvironment } = useSearchStore();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const isProd =
+    import.meta.env.PROD ||
+    (typeof process !== "undefined" &&
+      process?.env?.NODE_ENV === "production");
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -56,7 +60,7 @@ function Navbar() {
             </Link>
           </div>
 
-          {import.meta.env.DEV && (
+          {!isProd && (
             <div className="flex items-center gap-2 text-xs">
               <span className="uppercase tracking-wide text-white/70">Env:</span>
               <button
@@ -141,7 +145,7 @@ function Navbar() {
               My Bookings
             </Link>
 
-            {import.meta.env.DEV && (
+            {!isProd && (
               <div className="pt-2 border-t border-white/10 flex items-center justify-between">
                 <div className="uppercase tracking-wide text-white/70 text-[10px]">
                   Environment

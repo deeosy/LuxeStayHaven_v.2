@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+const defaultEnvironment = import.meta.env.PROD ? "production" : "sandbox";
+
 const useSearchStore = create((set) => ({
   searchMode: "destination",
   placeId: null,
@@ -10,7 +12,7 @@ const useSearchStore = create((set) => ({
   checkout: "",
   adults: 2,
   occupancies: [{ adults: 2, children: 0 }],
-  environment: "sandbox",
+  environment: defaultEnvironment,
   searchResults: [],
   loading: false,
   error: null,

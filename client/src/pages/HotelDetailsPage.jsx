@@ -518,8 +518,21 @@ function HotelDetailsPage() {
                       <div className="text-xl font-heading text-primary">
                         Reviews
                       </div>
-                      <div className="rounded-2xl bg-white border border-slate-100 shadow-soft p-5 text-sm text-textMedium">
-                        Reviews coming soon.
+                      <div className="rounded-2xl bg-white border border-slate-100 shadow-soft p-6 text-sm text-textMedium">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5 text-accent">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l7 4v6c0 5-3 8-7 8s-7-3-7-8V7l7-4z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6" />
+                            </svg>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="font-medium text-textDark">Verified reviews coming soon</div>
+                            <div className="text-textMedium">
+                              We’re preparing a cleaner, verified review experience. For now, explore Rooms and Overview for the details that matter most.
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
