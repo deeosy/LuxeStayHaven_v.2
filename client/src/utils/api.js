@@ -216,7 +216,7 @@ export async function initializeLitePayment({
   });
 
   const payment = new window.LiteAPIPayment(config);
-  payment.handlePayment();
+  payment.handlePayment(); 
 }
 
 // ==================== PREBOOK & BOOK HELPERS (Improved consistency) ====================
