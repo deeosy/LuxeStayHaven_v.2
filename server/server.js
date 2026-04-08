@@ -10,35 +10,63 @@ const morgan = require('morgan');
 
 app.use(morgan('dev'));   // This prints nice logs in the terminal when requests come in
 
-// Enhanced CORS configuration for payment processing
-const corsOptions = {
-  origin: [
-    "http://localhost:5000",
-    "http://localhost:3001",
-    "https://payment-wrapper.liteapi.travel",
-    "https://merchant-ui-api.stripe.com",
-    "https://r.stripe.com"
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Accept",
-    "Authorization",
-    "X-API-Key",
-    "X-Requested-With",
-    "Origin"
-  ],
+// // Enhanced CORS configuration for payment processing 
+// i used this earlier in development
+// const corsOptions = {
+//   origin: [
+//     "http://localhost:5000",
+//     "http://localhost:3001",
+//     "https://payment-wrapper.liteapi.travel",
+//     "https://merchant-ui-api.stripe.com",
+//     "https://r.stripe.com"
+//   ],
+//   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+//   allowedHeaders: [
+//     "Content-Type",
+//     "Accept",
+//     "Authorization",
+//     "X-API-Key",
+//     "X-Requested-With",
+//     "Origin"
+//   ],
+//   credentials: true,
+//   maxAge: 86400,
+//   preflightContinue: true
+// };
+
+// app.use(cors(corsOptions));
+
+// // Handle preflight OPTIONS requests for payment endpoints
+// app.options("/prebook", cors(corsOptions));
+// app.options("/book", cors(corsOptions));
+// app.options("*", cors(corsOptions));
+
+const allowedOrigins = [
+  "http://localhost:5000",
+  "http://localhost:3001",
+  "https://luxestayhaven.com",
+  "https://www.luxestayhaven.com",
+  "https://payment-wrapper.liteapi.travel" // ✅ keep for payment SDK
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // allow server-to-server or curl (no origin)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
-  maxAge: 86400,
-  preflightContinue: true
-};
+  maxAge: 86400
+}));
 
-app.use(cors(corsOptions));
 
-// Handle preflight OPTIONS requests for payment endpoints
-app.options("/prebook", cors(corsOptions));
-app.options("/book", cors(corsOptions));
-app.options("*", cors(corsOptions));
+
+
 
 const prod_apiKey = process.env.PROD_API_KEY;
 const sandbox_apiKey = process.env.SAND_API_KEY;
