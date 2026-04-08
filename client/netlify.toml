@@ -1,0 +1,10 @@
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "https://api.luxestayhaven.com/sitemap.xml"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
