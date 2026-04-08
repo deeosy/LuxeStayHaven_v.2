@@ -113,6 +113,8 @@ export async function searchRates({
   return handleResponse(res);
 }
 
+// ==================== PREBOOK & BOOK HELPERS (Improved consistency) ====================
+
 export async function prebook(data) {
   const payload = {
     offerId: data?.offerId,
@@ -121,10 +123,10 @@ export async function prebook(data) {
     adults: data?.adults,
     hotelId: data?.hotelId,
     children: data?.children ?? 0,
-    environment: data?.environment
+    environment: data?.environment || "production"   // default to production
   };
 
-  // Backward compatibility: some callers still send { rateId }
+  // Backward compatibility
   if (!payload.offerId && data?.rateId) {
     payload.offerId = data.rateId;
   }
@@ -135,11 +137,8 @@ export async function prebook(data) {
     body: JSON.stringify(payload)
   });
 
-  // Return the raw JSON response from the backend (full LiteAPI prebook response).
   return handleResponse(res);
 }
-
-// // ==================== PAYMENT SDK HELPERS (Updated for 2026 LiteAPI) ====================
 
 export function extractPrebookData(prebookResponse) {
   // Robust fallback for different possible response shapes (LiteAPI sometimes wraps in .data or .success)
@@ -216,33 +215,30 @@ export async function initializeLitePayment({
   });
 
   const payment = new window.LiteAPIPayment(config);
-  payment.handlePayment(); 
+  payment.handlePayment();
 }
 
-// ==================== PREBOOK & BOOK HELPERS (Improved consistency) ====================
-
-export async function prebook(data) {
-  const payload = {
-    offerId: data?.offerId,
-    checkin: data?.checkin,
-    checkout: data?.checkout,
-    adults: data?.adults,
-    hotelId: data?.hotelId,
-    children: data?.children ?? 0,
-    environment: data?.environment || "production"   // default to production
-  };
-
-  // Backward compatibility
-  if (!payload.offerId && data?.rateId) {
-    payload.offerId = data.rateId;
-  }
-
-  const res = await fetch(`${API_BASE}/prebook`, {
+export async function prebookOffer({
+  offerId,
+  checkin,
+  checkout,
+  adults,
+  hotelId,
+  environment = "production"
+}) {
+  const base = API_BASE;
+  const res = await fetch(`${base}/prebook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      offerId,
+      checkin,
+      checkout,
+      adults,
+      hotelId,
+      environment
+    })
   });
-
   return handleResponse(res);
 }
 
