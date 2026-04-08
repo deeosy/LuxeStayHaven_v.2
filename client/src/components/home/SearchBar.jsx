@@ -520,11 +520,15 @@ function SearchBar({
             className="fixed inset-0 z-[9999] pointer-events-none"
           >
             {isMobile ? (
-              <div
+              <motion.div
                 ref={overlayRef}
+                initial={{ y: 18, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 18, opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
                 className="pointer-events-auto fixed inset-0 bg-background"
               >
-                <div className="h-14 px-4 flex items-center justify-between border-b border-slate-100">
+                <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100">
                   <div className="text-sm font-semibold text-primary">
                     {openPanel === "where"
                       ? "Where"
@@ -535,7 +539,7 @@ function SearchBar({
                   <button
                     type="button"
                     onClick={closePanel}
-                    className="h-9 w-9 inline-flex items-center justify-center rounded-full border border-slate-200"
+                    className="h-10 w-10 inline-flex items-center justify-center rounded-full border border-slate-200"
                     aria-label="Close"
                   >
                     ×
@@ -678,7 +682,7 @@ function SearchBar({
                               new Date(monthLeft.getFullYear(), monthLeft.getMonth() - 1, 1)
                             )
                           }
-                          className="rounded-full border border-slate-200 px-3 py-1 text-sm"
+                          className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-slate-200 text-base"
                         >
                           ‹
                         </button>
@@ -689,7 +693,7 @@ function SearchBar({
                               new Date(monthLeft.getFullYear(), monthLeft.getMonth() + 1, 1)
                             )
                           }
-                          className="rounded-full border border-slate-200 px-3 py-1 text-sm"
+                          className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-slate-200 text-base"
                         >
                           ›
                         </button>
@@ -718,7 +722,7 @@ function SearchBar({
                                       )
                                     )
                                   }
-                                  className="h-8 w-8 rounded-full border border-slate-200"
+                                  className="h-10 w-10 rounded-full border border-slate-200"
                                 >
                                   −
                                 </button>
@@ -732,7 +736,7 @@ function SearchBar({
                                       )
                                     )
                                   }
-                                  className="h-8 w-8 rounded-full border border-slate-200"
+                                  className="h-10 w-10 rounded-full border border-slate-200"
                                 >
                                   +
                                 </button>
@@ -750,7 +754,7 @@ function SearchBar({
                                       )
                                     )
                                   }
-                                  className="h-8 w-8 rounded-full border border-slate-200"
+                                  className="h-10 w-10 rounded-full border border-slate-200"
                                 >
                                   −
                                 </button>
@@ -764,7 +768,7 @@ function SearchBar({
                                       )
                                     )
                                   }
-                                  className="h-8 w-8 rounded-full border border-slate-200"
+                                  className="h-10 w-10 rounded-full border border-slate-200"
                                 >
                                   +
                                 </button>
@@ -805,7 +809,7 @@ function SearchBar({
                     </div>
                   </div>
                 )}
-              </div>
+              </motion.div>
             ) : (
               <div ref={overlayRef} className="pointer-events-none">
                 {openPanel === "where" && barRect && (

@@ -8,38 +8,9 @@ const https = require("https");
 require("dotenv").config();
 const morgan = require('morgan');
 
-app.use(morgan('dev'));   // This prints nice logs in the terminal when requests come in
-
-// // Enhanced CORS configuration for payment processing 
-// i used this earlier in development
-// const corsOptions = {
-//   origin: [
-//     "http://localhost:5000",
-//     "http://localhost:3001",
-//     "https://payment-wrapper.liteapi.travel",
-//     "https://merchant-ui-api.stripe.com",
-//     "https://r.stripe.com"
-//   ],
-//   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-//   allowedHeaders: [
-//     "Content-Type",
-//     "Accept",
-//     "Authorization",
-//     "X-API-Key",
-//     "X-Requested-With",
-//     "Origin"
-//   ],
-//   credentials: true,
-//   maxAge: 86400,
-//   preflightContinue: true
-// };
-
-// app.use(cors(corsOptions));
-
-// // Handle preflight OPTIONS requests for payment endpoints
-// app.options("/prebook", cors(corsOptions));
-// app.options("/book", cors(corsOptions));
-// app.options("*", cors(corsOptions));
+if (process.env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
 
 const allowedOrigins = [
   "http://localhost:5000",
@@ -463,7 +434,7 @@ app.get("/search-rates", async (req, res) => {
     // Fetch rates only for the specified hotel
     const fullRatesResponse = await sdk.getFullRates({
       hotelIds: [hotelId],
-      occupancies: [{ adults: parseInt(adults, 10) }],
+      occupancies: [{ adults: Math.max(1, parseInt(adults, 10) || 2) }],
       currency: "USD",
       guestNationality: "US",
       checkin,
@@ -495,50 +466,59 @@ app.get("/search-rates", async (req, res) => {
       }
       const hotelInfo = hotelsResponse.data;
 
-      // Prepare the response data
-      const rateInfo = rates.map((hotel) =>
-        hotel.roomTypes.flatMap((roomType) => {
-          // Define the board types we're interested in
-          const boardTypes = ["RO", "BI"];
+      const rateInfo = rates.flatMap((hotel) => {
+        const roomTypes = Array.isArray(hotel?.roomTypes) ? hotel.roomTypes : [];
+        return roomTypes
+          .map((roomType) => {
+            const roomRates = Array.isArray(roomType?.rates) ? roomType.rates : [];
+            if (roomRates.length === 0) return null;
 
-          // Filter rates by board type and sort by refundable tag
-          return boardTypes
-            .map((boardType) => {
-              const filteredRates = roomType.rates.filter((rate) => rate.boardType === boardType);
-
-              // Sort to prioritize 'RFN' over 'NRFN'
-              const sortedRates = filteredRates.sort((a, b) => {
-                if (
-                  a.cancellationPolicies.refundableTag === "RFN" &&
-                  b.cancellationPolicies.refundableTag !== "RFN"
-                ) {
-                  return -1; // a before b
-                } else if (
-                  b.cancellationPolicies.refundableTag === "RFN" &&
-                  a.cancellationPolicies.refundableTag !== "RFN"
-                ) {
-                  return 1; // b before a
-                }
-                return 0; // no change in order
-              });
-
-              // Return the first rate meeting the criteria if it exists
-              if (sortedRates.length > 0) {
-                const rate = sortedRates[0];
+            const normalized = roomRates
+              .map((r) => {
+                const retail =
+                  r?.retailRate?.total?.[0]?.amount ??
+                  r?.retailRate?.amount ??
+                  r?.retailRate?.totalAmount ??
+                  null;
+                const original =
+                  r?.retailRate?.suggestedSellingPrice?.[0]?.amount ??
+                  r?.retailRate?.msp?.[0]?.amount ??
+                  null;
+                const retailNum = retail == null ? null : Number(retail);
+                const originalNum = original == null ? null : Number(original);
                 return {
-                  rateName: rate.name,
-                  offerId: roomType.offerId,
-                  board: rate.boardName,
-                  refundableTag: rate.cancellationPolicies.refundableTag,
-                  retailRate: rate.retailRate.total[0].amount,
-                  originalRate: rate.retailRate.suggestedSellingPrice[0].amount,
+                  name: r?.name || "",
+                  boardName: r?.boardName || r?.board || "",
+                  boardType: r?.boardType || "",
+                  refundableTag: r?.cancellationPolicies?.refundableTag || "",
+                  retailRate: retailNum,
+                  originalRate: originalNum
                 };
-              }
-              return null; // or some default object if no rates meet the criteria
-            })
-            .filter((rate) => rate !== null); // Filter out null values if no rates meet the criteria
-        })
-      );
+              })
+              .filter((r) => Number.isFinite(r.retailRate));
+
+            if (normalized.length === 0) return null;
+
+            const refundable = normalized.filter((r) => r.refundableTag === "RFN");
+            const pool = refundable.length > 0 ? refundable : normalized;
+            const best = pool.reduce((acc, cur) => (cur.retailRate < acc.retailRate ? cur : acc), pool[0]);
+
+            const offerId = roomType?.offerId != null ? String(roomType.offerId).trim() : "";
+            if (!offerId) return null;
+
+            return {
+              rateName: roomType?.name || best.name || "Room rate",
+              offerId,
+              board: best.boardName,
+              boardType: best.boardType,
+              refundableTag: best.refundableTag,
+              retailRate: best.retailRate,
+              originalRate: Number.isFinite(best.originalRate) ? best.originalRate : null,
+              roomTypeId: roomType?.roomTypeId || null
+            };
+          })
+          .filter(Boolean);
+      });
       return res.json({ hotelInfo, rateInfo });
     }
 
@@ -777,14 +757,11 @@ app.get("*", (req, res) => {
 const basePort = Number(process.env.PORT || 5000);
 
 function startServer(port, attempt) {
-  const server = app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-  });
+  const server = app.listen(port);
 
   server.on("error", (err) => {
     if (err?.code === "EADDRINUSE" && attempt < 10) {
       const next = port + 1;
-      console.log(`Port ${port} is in use, trying ${next}...`);
       startServer(next, attempt + 1);
       return;
     }

@@ -701,7 +701,13 @@ function SearchResultsPage() {
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center gap-2">
                   {hasMore && (
-                    <Button type="button" variant="secondary" onClick={loadMore} disabled={loadingMore}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                      className="w-full sm:w-auto"
+                    >
                       {loadingMore ? "Loading more…" : "Load more hotels"}
                     </Button>
                   )}
@@ -734,7 +740,13 @@ function SearchResultsPage() {
 
                 {hasMore && (
                   <div className="flex flex-col items-center gap-2">
-                    <Button type="button" variant="secondary" onClick={loadMore} disabled={loadingMore}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                      className="w-full max-w-sm"
+                    >
                       {loadingMore ? "Loading more…" : "Load more"}
                     </Button>
                     {loadingMore && (

@@ -44,18 +44,6 @@ function stripHtml(value) {
   return noTags.replace(/\s+/g, " ").trim();
 }
 
-function hashStringToIndex(value, modulo) {
-  const m = Number(modulo);
-  if (!Number.isFinite(m) || m <= 0) return 0;
-  const s = String(value || "");
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) {
-    h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  }
-  return h % m;
-}
-
-
 function HotelDetailsPage() {
   const { hotelId } = useParams();
   const query = useQuery();
@@ -181,9 +169,20 @@ function HotelDetailsPage() {
   }, [flattenedOffers]);
 
   const hotelImages = useMemo(() => {
-    const list = Array.isArray(hotelInfo?.hotelImages) ? hotelInfo.hotelImages : [];
-    return list;
-  }, [hotelInfo?.hotelImages]);
+    const a = Array.isArray(hotelInfo?.hotelImages) ? hotelInfo.hotelImages : [];
+    const b = Array.isArray(hotelInfo?.images) ? hotelInfo.images : [];
+    const merged = [...a, ...b];
+    const seen = new Set();
+    return merged
+      .map((x) => x?.url)
+      .filter(Boolean)
+      .filter((url) => {
+        if (seen.has(url)) return false;
+        seen.add(url);
+        return true;
+      })
+      .map((url) => ({ url }));
+  }, [hotelInfo?.hotelImages, hotelInfo?.images]);
 
   const minPerNight = useMemo(() => {
     const nights = nightsBetween(resolvedCheckin, resolvedCheckout) || 1;
@@ -485,7 +484,7 @@ function HotelDetailsPage() {
                                 ...offer,
                                 isBestDeal: bestOfferId && offer.offerId === bestOfferId,
                                 hotelImages,
-                                imageIndex: hashStringToIndex(offer?.offerId || index, hotelImages.length),
+                                imageIndex: index + 1,
                                 hotelMainPhoto: hotelInfo?.main_photo || ""
                               }}
                               selected={selectedRoom?.offerId === offer.offerId}

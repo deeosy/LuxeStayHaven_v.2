@@ -20,17 +20,18 @@ function pickFirstImageUrl(list) {
 }
 
 function resolveRoomThumbnail(offer) {
-  const fromRoomType =
+  const roomSpecific =
     pickFirstImageUrl(offer?.roomType?.images) ||
     pickFirstImageUrl(offer?.roomType?.roomImages) ||
     pickFirstImageUrl(offer?.roomTypeImages) ||
     pickFirstImageUrl(offer?.roomImages) ||
     pickFirstImageUrl(offer?.images) ||
-    firstUrl(offer?.imageUrl) ||
-    firstUrl(offer?.image) ||
     firstUrl(offer?.roomImageUrl) ||
-    firstUrl(offer?.roomImage);
-  if (fromRoomType) return fromRoomType;
+    firstUrl(offer?.roomImage) ||
+    firstUrl(offer?.imageUrl) ||
+    firstUrl(offer?.image);
+
+  if (roomSpecific) return roomSpecific;
 
   const hotelImages = Array.isArray(offer?.hotelImages) ? offer.hotelImages : [];
   if (hotelImages.length > 0) {
@@ -40,6 +41,9 @@ function resolveRoomThumbnail(offer) {
     const picked = urls.length > 0 ? urls[idx % urls.length] : "";
     if (picked) return picked;
   }
+
+  const hotelMain = firstUrl(offer?.hotelMainPhoto) || firstUrl(offer?.hotelPhoto);
+  if (hotelMain) return hotelMain;
 
   return "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80";
 }
