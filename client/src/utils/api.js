@@ -139,18 +139,18 @@ export async function prebook(data) {
   return handleResponse(res);
 }
 
-export function extractPrebookData(prebookResponse) {
-  const raw = prebookResponse?.success?.data
-    ? prebookResponse.success
-    : prebookResponse;
+// // ==================== PAYMENT SDK HELPERS (Updated for 2026 LiteAPI) ====================
 
-  const data = raw?.data || raw;
+export function extractPrebookData(prebookResponse) {
+  // Robust fallback for different possible response shapes (LiteAPI sometimes wraps in .data or .success)
+  const raw = prebookResponse?.data ?? prebookResponse?.success?.data ?? prebookResponse;
+  const data = raw?.data ?? raw;
 
   return {
-    status: raw?.status,
-    prebookId: data?.prebookId,
-    transactionId: data?.transactionId,
-    secretKey: data?.secretKey
+    status: raw?.status || data?.status,
+    prebookId: data?.prebookId || raw?.prebookId,
+    transactionId: data?.transactionId || raw?.transactionId,
+    secretKey: data?.secretKey || raw?.secretKey,
   };
 }
 
@@ -179,31 +179,32 @@ export function loadLitePaymentSdk() {
 export async function initializeLitePayment({
   prebookResponse,
   returnUrl,
-  targetElement,
-  environment
+  targetElement = "#payment-container",
+  environment = "production"
 }) {
   const { prebookId, secretKey } = extractPrebookData(prebookResponse);
 
   if (!prebookId || !secretKey) {
-    throw new Error("Prebook response missing prebookId or secretKey");
+    throw new Error("Prebook response missing prebookId or secretKey. Check your /prebook call.");
   }
 
   await loadLitePaymentSdk();
 
-  // FIXED: LiteAPI Payment SDK expects sandbox/production keys (do not hardcode ports in returnUrl)
-  const publicKey = environment === "sandbox" ? "sandbox" : "production";
+  // Latest LiteAPI 2026: publicKey must be "live" for production, "sandbox" for sandbox
+  const publicKey = environment === "sandbox" ? "sandbox" : "live";
 
   const container = document.querySelector(targetElement);
   if (container) container.innerHTML = "";
 
   const config = {
-    publicKey,
+    publicKey,           // "live" or "sandbox" — critical fix
     secretKey,
     targetElement,
     returnUrl,
-    environment,
+    environment,         // your internal flag ("production"/"sandbox")
     options: {
-      business: { name: "LuxeStayHaven" }
+      business: { name: "LuxeStayHaven" },
+      // You can add appearance customizations here if desired
     }
   };
 
@@ -218,41 +219,48 @@ export async function initializeLitePayment({
   payment.handlePayment();
 }
 
-export async function prebookOffer({
-  offerId,
-  checkin,
-  checkout,
-  adults,
-  hotelId,
-  environment
-}) {
-  const base = API_BASE;
-  const res = await fetch(`${base}/prebook`, {
+// ==================== PREBOOK & BOOK HELPERS (Improved consistency) ====================
+
+export async function prebook(data) {
+  const payload = {
+    offerId: data?.offerId,
+    checkin: data?.checkin,
+    checkout: data?.checkout,
+    adults: data?.adults,
+    hotelId: data?.hotelId,
+    children: data?.children ?? 0,
+    environment: data?.environment || "production"   // default to production
+  };
+
+  // Backward compatibility
+  if (!payload.offerId && data?.rateId) {
+    payload.offerId = data.rateId;
+  }
+
+  const res = await fetch(`${API_BASE}/prebook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      offerId,
-      checkin,
-      checkout,
-      adults,
-      hotelId,
-      environment
-    })
+    body: JSON.stringify(payload)
   });
+
   return handleResponse(res);
 }
 
 export async function bookReservation({
   prebookId,
   transactionId,
-  environment,
+  environment = "production",
   holder
 }) {
-  const base = API_BASE;
-  const res = await fetch(`${base}/book`, {
+  const res = await fetch(`${API_BASE}/book`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prebookId, transactionId, environment, holder })
+    body: JSON.stringify({ 
+      prebookId, 
+      transactionId, 
+      environment,
+      holder 
+    })
   });
   return handleResponse(res);
 }
